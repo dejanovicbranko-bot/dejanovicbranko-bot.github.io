@@ -304,3 +304,13 @@ GRIDLEDGER v2.1 PERSONNEL — IMPORT DU TABLEAU DE BASE
 - Les versements futurs et hypothèses de rendement restent du planning.
 - Le capital bots est importé de façon agrégée Bybit + Pionex car le tableau ne donne pas leur ventilation.
 - L'immobilier est importé comme capital net récupérable personnel, pas comme valeur brute de la maison.
+
+
+GRIDLEDGER v2.1.1 — CAPITAL FINANCIER
+=====================================
+- L'immobilier personnel est entièrement hors du périmètre GridLedger.
+- Le tableau de bord affiche le capital financier suivi.
+- Les objectifs sont comparés uniquement au capital financier.
+- La migration retire automatiquement l'ancien immobilier importé en v2.1.
+- Bots, BTC, réserve, mouvements, snapshots et documents restent inchangés.
+- Le fichier Excel d'origine reste la source séparée pour l'immobilier.

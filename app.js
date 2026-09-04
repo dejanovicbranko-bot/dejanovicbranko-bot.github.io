@@ -55,6 +55,24 @@ function ensureStateShape(s){
   s.planning=s.planning||{};
   s.taxScenarios=s.taxScenarios||{};
   s.fiscal=s.fiscal||{country:'MANUAL'};
+
+  // v2.1.1 : l'immobilier personnel est hors périmètre GridLedger.
+  // Migration ciblée de l'ancien import v2.1 uniquement.
+  if(!s.settings.realEstateExcludedMigrationDone){
+    const hadImportedRealEstate=s.locations.some(l=>l.id==='home-taviers-net');
+    if(hadImportedRealEstate){
+      s.locations=s.locations.filter(l=>l.id!=='home-taviers-net');
+      s.observations=s.observations.filter(o=>o.locationId!=='home-taviers-net');
+      s.auditEvents.push({
+        id:uid(),
+        type:'REAL_ESTATE_EXCLUDED_FROM_GRIDLEDGER',
+        createdAt:nowIso(),
+        note:'Immobilier retiré du capital financier suivi.'
+      });
+    }
+    s.settings.realEstateExcludedMigrationDone=true;
+  }
+
   for(const l of s.locations){
     if(!l.class)l.class='MOBILISABLE';
     if(l.baseline===undefined)l.baseline=0;
@@ -380,7 +398,7 @@ function renderDashboard(){
   $('dashboardAllocation').innerHTML=
     `<div><span>Mobilisable</span><b>${money(mob)} · ${pct(mob).toFixed(0)}%</b></div>`
     +`<div><span>Protégé</span><b>${money(prot)} · ${pct(prot).toFixed(0)}%</b></div>`
-    +`<div><span>Illiquide</span><b>${money(ill)} · ${pct(ill).toFixed(0)}%</b></div>`;
+    +(ill>0?`<div><span>Illiquide financier</span><b>${money(ill)} · ${pct(ill).toFixed(0)}%</b></div>`:'');
 
   const target=Number(s.goals?.wealth||0);
   const gp=target>0?Math.min(100,Math.max(0,total(s)/target*100)):0;
@@ -1407,7 +1425,7 @@ function renderGoals(){
   const botValue=currentState.bots.reduce((a,b)=>a+Number(b.value||0),0);
   const botPct=total(currentState)>0?botValue/total(currentState)*100:0;
   $('goalsProgress').innerHTML=
-    goalProgressCard('Patrimoine',total(currentState),Number(g.wealth||0))
+    goalProgressCard('Capital financier',total(currentState),Number(g.wealth||0))
     +goalProgressCard('Réserve protégée',protectedValue,Number(g.protected||0))
     +`<div class="goalProgressCard"><div class="top"><b>Allocation bots</b><span>${botPct.toFixed(1)} %${Number(g.botMaxPct||0)>0?` / max ${Number(g.botMaxPct).toFixed(1)} %`:''}</span></div>
       <div class="progressTrack"><div class="progressFill" style="width:${Math.min(100,botPct)}%"></div></div></div>`
@@ -1661,7 +1679,7 @@ function requireNumberCell(cells,ref,label){
 function importedPlanningHtml(p){
   if(!p||!p.importedAt)return '';
   return `<div class="planningBox">
-    <b>Plan lu dans le tableau · non comptabilisé</b>
+    <b>Plan financier lu dans le tableau · immobilier exclu</b>
     <div><span>Bots 2026</span><strong>${money(p.botMonthly2026)}/mois</strong></div>
     <div><span>Bots à partir de 2027</span><strong>${money(p.botMonthlyFrom2027)}/mois</strong></div>
     <div><span>BTC long terme</span><strong>${money(p.btcMonthly)}/mois</strong></div>
@@ -1700,19 +1718,13 @@ async function importBaseWorkbook(file){
     const etfStartYear=requireNumberCell(h,'B28','Année de début ETF');
     const etfMonthly=requireNumberCell(h,'B29','Apport mensuel ETF');
 
-    const homeValue=requireNumberCell(h,'B34','Valeur maison');
-    const homeDebt=requireNumberCell(h,'B35','Solde crédit');
-    const ownership=requireNumberCell(h,'B40','Part de détention');
-    const advance=requireNumberCell(h,'B41','Avance à déduire');
-    const netHome=Math.max(0,(homeValue-homeDebt)*ownership-advance);
-
     const budgetMinimum=requireNumberCell(h,'B44','Budget minimum');
     const budgetComfortable=requireNumberCell(h,'B45','Budget confortable');
     const withdrawalRate=requireNumberCell(h,'B46','Taux de retrait');
     const targetMinimum=requireNumberCell(h,'B47','Capital cible minimum');
     const targetComfortable=requireNumberCell(h,'B48','Capital cible confortable');
 
-    const initialTotal=botCapital+btcInitial+reserveInitial+netHome;
+    const initialTotal=botCapital+btcInitial+reserveInitial;
 
     const hasExisting=currentState.locations.length||currentState.movements.length||
       currentState.snapshots.length||currentState.bots.length;
@@ -1745,12 +1757,6 @@ async function importBaseWorkbook(file){
         type:'ACCOUNT',class:'PROTECTED',
         baseline:reserveInitial,balance:reserveInitial,lastObservedAt:importedAt,confidence:'CERTAIN',
         note:'Réserve importée comme valeur d’ouverture.'
-      },
-      {
-        id:'home-taviers-net',name:'Maison principale — Taviers · capital net récupérable',
-        type:'ASSET',class:'ILLIQUID',
-        baseline:netHome,balance:netHome,lastObservedAt:importedAt,confidence:'ESTIMATED',
-        note:`Calcul du tableau : (${money(homeValue)} − ${money(homeDebt)}) × ${(ownership*100).toFixed(0)} % − ${money(advance)}. Capital illiquide, disponible uniquement en cas de vente effective.`
       }
     ];
 
@@ -1769,8 +1775,7 @@ async function importBaseWorkbook(file){
     currentState.observations=[
       {id:uid(),locationId:'bots-crypto-aggregate',value:botCapital,observedAt:importedAt,date:importedAt.slice(0,10),confidence:'CERTAIN',sourceType:'BASE_WORKBOOK'},
       {id:uid(),locationId:'btc-bitstack',value:btcInitial,observedAt:importedAt,date:importedAt.slice(0,10),confidence:'CERTAIN',sourceType:'BASE_WORKBOOK'},
-      {id:uid(),locationId:'reserve-bybit',value:reserveInitial,observedAt:importedAt,date:importedAt.slice(0,10),confidence:'CERTAIN',sourceType:'BASE_WORKBOOK'},
-      {id:uid(),locationId:'home-taviers-net',value:netHome,observedAt:importedAt,date:importedAt.slice(0,10),confidence:'ESTIMATED',sourceType:'BASE_WORKBOOK'}
+      {id:uid(),locationId:'reserve-bybit',value:reserveInitial,observedAt:importedAt,date:importedAt.slice(0,10),confidence:'CERTAIN',sourceType:'BASE_WORKBOOK'}
     ];
     currentState.strategyEpochs=[];
 
