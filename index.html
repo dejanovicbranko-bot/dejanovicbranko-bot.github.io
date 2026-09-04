@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#17324d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+<title>GridLedger Personnel</title>
+</head>
+<body>
+<div id="securityGate" class="securityGate">
+  <div class="gateCard">
+    <div class="brandMark">GL</div>
+    <h1>GridLedger</h1>
+    <p id="gateSubtitle">Coffre local chiffré</p>
+
+    <div id="createVaultPane" hidden>
+      <div class="securityInfo">
+        Crée un mot de passe pour chiffrer les données et documents sur cet appareil.
+        GridLedger ne connaît pas ce mot de passe.
+      </div>
+      <label>Mot de passe / code</label>
+      <input id="newPassword" type="password" autocomplete="new-password" placeholder="6 caractères minimum">
+      <label>Confirmer</label>
+      <input id="confirmPassword" type="password" autocomplete="new-password">
+      <button id="createVaultBtn">Créer le coffre</button>
+      <p class="gateHint">Un mot de passe long est plus sûr qu’un simple PIN.</p>
+    </div>
+
+    <div id="unlockVaultPane" hidden>
+      <label>Mot de passe / code</label>
+      <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="Déverrouiller">
+      <button id="unlockVaultBtn">Déverrouiller</button>
+      <p id="unlockError" class="errorText"></p>
+      <p class="gateHint">Mot de passe oublié = données locales impossibles à déchiffrer. Une sauvegarde chiffrée ne contourne pas le mot de passe.</p>
+    </div>
+
+    <div id="unsupportedPane" hidden>
+      <div class="warning">Ce navigateur ne fournit pas les fonctions de chiffrement/stockage nécessaires. Utilise la PWA installée dans Safari/Chrome.</div>
+    </div>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">GridLedger · coffre chiffré</div>
+      <h1 id="pageTitle">Tableau de bord</h1>
+    </div>
+    <div class="topActions">
+      <button class="iconbtn" id="installBtn" hidden>Installer</button>
+      <button class="lockbtn" id="lockNowBtn">Verrouiller</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="dashboard" class="screen active">
+      <div class="hero">
+        <div class="label">Patrimoine suivi</div>
+        <div class="heroValue" id="totalValue">0,00 €</div>
+        <div class="heroSub"><span id="globalPerf">0,00 €</span> de performance économique</div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric"><span>Bots</span><b id="botValue">0,00 €</b></div>
+        <div class="metric"><span>Protégé</span><b id="protectedValue">0,00 €</b></div>
+        <div class="metric"><span>Documents</span><b id="docCount">0</b></div>
+        <div class="metric"><span>Fiscal</span><b id="taxDocCount">0 pièce</b></div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead"><h2>Répartition du patrimoine</h2><button class="linkbtn" data-go="patrimoine">Détail</button></div>
+        <div class="allocationBar" id="dashboardAllocationBar"></div>
+        <div id="dashboardAllocation" class="denseRows"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead"><h2>Objectif principal</h2><button class="linkbtn" data-go="goals">Modifier</button></div>
+        <div id="dashboardGoalText" class="muted">Aucun objectif défini.</div>
+        <div class="progressTrack"><div id="dashboardGoalProgress" class="progressFill"></div></div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead"><h2>Qualité des données</h2><button class="linkbtn" data-go="quality">Voir</button></div>
+        <div id="dashboardQuality" class="muted">Contrôle en cours…</div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead"><h2>Bots Spot Grid</h2><button class="linkbtn" data-go="bots">Voir</button></div>
+        <div id="dashboardBots"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead"><h2>Dossier fiscal</h2><button class="linkbtn" data-go="fiscal">Ouvrir</button></div>
+        <div id="dashboardFiscal" class="muted">Aucune pièce fiscale.</div>
+      </div>
+
+      <div class="panel securePanel">
+        <h2>Sécurité</h2>
+        <div class="rows">
+          <div><span>Données comptables</span><b>Chiffrées</b></div>
+          <div><span>Documents</span><b>Chiffrés</b></div>
+          <div><span>Clé</span><b>En mémoire uniquement</b></div>
+          <div><span>Verrouillage auto</span><b id="dashAutoLock">5 min</b></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="capture" class="screen">
+      <div class="panel">
+        <h2>Capture intelligente</h2>
+        <p class="muted">Capture → extraction → vérification humaine → enregistrement. La capture reste temporaire tant que tu ne choisis pas de la conserver comme document.</p>
+        <div class="captureButtons">
+          <label class="filebtn captureChoice">Choisir une image
+            <input id="captureGalleryInput" type="file" accept="image/*" hidden>
+          </label>
+          <label class="filebtn captureChoice secondaryChoice">Prendre une photo
+            <input id="captureCameraInput" type="file" accept="image/*" capture="environment" hidden>
+          </label>
+        </div>
+        <div class="smallmuted">Pour une capture d’écran déjà enregistrée, utilise « Choisir une image ».</div>
+        <div id="capturePreview" class="capturePreview">Aucune image</div>
+        <button id="zoomCaptureBtn" class="secondaryButton" hidden>Voir la capture en grand</button>
+        <label>Application / source</label>
+        <input id="captureSource" placeholder="Détection automatique : Pionex, Bybit, Bitstack…">
+        <label>Type</label>
+        <select id="captureKind">
+          <option value="BOT">Bot Spot Grid</option>
+          <option value="ASSET">Actif / portefeuille</option>
+          <option value="DOCUMENT">Justificatif</option>
+        </select>
+
+        <div class="ocrActions">
+          <button id="captureOCR">Lire l’image (OCR local)</button>
+          <button id="captureAnalyze" class="secondaryButton">Analyser le texte</button>
+        </div>
+        <div id="ocrStatus" class="ocrStatus">OCR en attente. Le premier lancement peut télécharger le moteur et les langues.</div>
+
+        <label>Texte détecté ou collé</label>
+        <textarea id="captureText" rows="8" placeholder="Le texte OCR apparaîtra ici. Tu peux toujours le corriger à la main."></textarea>
+
+        <div id="captureResult" class="resultBox muted">Aucune analyse.</div>
+
+        <div id="captureProposalPanel" class="proposalPanel" hidden>
+          <h3>Proposition GridLedger</h3>
+          <p class="muted">Vérifie les champs proposés. Corrige seulement ceux qui ne correspondent pas à la capture.</p>
+          <div id="captureAccountingNote" class="warning small" hidden></div>
+          <button id="toggleCaptureAdvanced" class="advancedToggle" type="button">Afficher les outils avancés</button>
+          <div class="verificationBar">
+            <span id="verificationCount">0 champ à vérifier</span>
+            <button id="rereadMissingBtn" class="secondaryButton advancedOnly">Relire les champs manquants</button>
+          </div>
+          <div id="captureProposal"></div>
+          <div id="fieldRereadDebug" class="fieldRereadDebug" hidden></div>
+
+          <div id="captureBotSaveArea" hidden>
+            <label>Associer au bot</label>
+            <select id="captureBotTarget"></select>
+            <label>Date du relevé</label>
+            <input id="captureDate" type="date">
+            <label class="check"><input id="captureKeepImage" type="checkbox"> Conserver la capture comme justificatif chiffré</label>
+            <button id="saveCaptureBot">Valider et enregistrer le snapshot</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="bots" class="screen">
+      <div class="panelHead stickyHead">
+        <h2>Bots</h2><button id="addBotBtn">+ Ajouter</button>
+      </div>
+      <div id="botsList"></div>
+    </section>
+
+    <section id="botDetail" class="screen">
+      <div class="detailTop">
+        <button id="backToBots" class="secondaryButton">← Bots</button>
+        <span id="botDetailStatus" class="pill">Bot</span>
+      </div>
+
+      <div class="panel botHeroPanel">
+        <div class="panelHead">
+          <div>
+            <div class="eyebrow detailEyebrow" id="botDetailPlatform">Plateforme</div>
+            <h2 id="botDetailName">Bot</h2>
+          </div>
+          <span id="botDetailPair" class="pairBadge">—</span>
+        </div>
+        <div class="detailMetrics">
+          <div><span>Valeur patrimoniale EUR</span><b id="botDetailEur">—</b></div>
+          <div><span>Dernier Grid Profit</span><b id="botDetailGrid">—</b></div>
+          <div><span>Dernier P&L latent</span><b id="botDetailLatent">—</b></div>
+          <div><span>Snapshots</span><b id="botDetailSnapshotCount">0</b></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead">
+          <div>
+            <h2>Comptabilité du bot</h2>
+            <div class="smallmuted">Performance GridLedger en EUR, séparée des métriques Pionex.</div>
+          </div>
+        </div>
+
+        <div id="botReconcileBanner" class="reconcileBanner" hidden></div>
+
+        <div class="accountingGrid">
+          <div class="accountingKpi primaryKpi">
+            <span>Performance GridLedger</span>
+            <b id="botAccountingPerf">—</b>
+            <small id="botAccountingPerfStatus"></small>
+          </div>
+          <div class="accountingKpi">
+            <span>Valeur d’ouverture</span>
+            <b id="botAccountingBaseline">—</b>
+          </div>
+          <div class="accountingKpi">
+            <span>Financement reçu</span>
+            <b id="botAccountingIn">—</b>
+          </div>
+          <div class="accountingKpi">
+            <span>Sorties du bot</span>
+            <b id="botAccountingOut">—</b>
+          </div>
+        </div>
+
+        <div class="flowExplainGrid">
+          <div>
+            <span>Gains retirés qualifiés</span>
+            <b id="botWithdrawnConfirmed">—</b>
+          </div>
+          <div>
+            <span>Réinvestissements qualifiés</span>
+            <b id="botReinvestConfirmed">—</b>
+          </div>
+          <div>
+            <span>« Retiré » plateforme</span>
+            <b id="botPlatformWithdrawn">—</b>
+          </div>
+          <div>
+            <span>Frais enregistrés</span>
+            <b id="botFeesRecorded">—</b>
+            <small id="botFeesBreakdown" class="feeBreakdown"></small>
+          </div>
+        </div>
+
+        <details class="valueUpdateDetails">
+          <summary>Mettre à jour la valeur EUR du bot</summary>
+          <div class="movementEntryBox">
+            <label>Valeur actuelle observée EUR</label>
+            <input id="botObservedValue" inputmode="decimal" placeholder="0,00">
+            <label>Date d’observation</label>
+            <input id="botObservedDate" type="date">
+            <div class="warning small">
+              Utilise uniquement une valeur réellement observée. GridLedger ne la calcule pas à partir du Grid Profit ou du P&L latent.
+            </div>
+            <button id="saveBotObservedValue" type="button">Confirmer cette valeur observée</button>
+          </div>
+        </details>
+
+        <details class="explainDetails">
+          <summary>D’où vient la performance GridLedger ?</summary>
+          <div id="botAccountingFormula" class="formulaBox"></div>
+          <p class="muted small">Le Grid Profit et le P&L latent servent d’explication. Ils ne sont jamais ajoutés une deuxième fois à cette performance.</p>
+        </details>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead chartHead">
+          <div>
+            <h2>Évolution du bot</h2>
+            <div id="botChartSubtitle" class="smallmuted">Métriques natives</div>
+          </div>
+          <select id="botChartRange" class="compactSelect">
+            <option value="7">7 j</option>
+            <option value="30">30 j</option>
+            <option value="90">3 mois</option>
+            <option value="365">1 an</option>
+            <option value="ALL" selected>Tout</option>
+          </select>
+        </div>
+
+        <div class="chartLegend">
+          <span><i class="legendGrid"></i>Grid Profit</span>
+          <span><i class="legendLatent"></i>P&L latent</span>
+        </div>
+
+        <div class="chartTestBar internalTestOnly">
+          <button id="toggleDemoSnapshot" type="button">Ajouter un relevé fictif de test</button>
+          <span id="demoSnapshotStatus" class="smallmuted">Aucune donnée fictive active.</span>
+        </div>
+
+        <div id="botChartWrap" class="botChartWrap">
+          <svg id="botHistoryChart" class="botHistoryChart" viewBox="0 0 640 300" preserveAspectRatio="none" aria-label="Graphique d'évolution du bot"></svg>
+          <div id="botChartEmpty" class="chartEmpty" hidden>Pas assez de snapshots pour tracer une évolution.</div>
+        </div>
+        <div id="botChartNote" class="smallmuted chartNote"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead"><h2>Historique des snapshots</h2><span id="botHistoryCount" class="smallmuted"></span></div>
+        <div id="botSnapshotDuplicateNotice" class="duplicateNotice" hidden></div>
+        <div id="botSnapshotHistory"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Mouvements liés</h2>
+        <p class="muted">Les mouvements décrivent la provenance et la destination du capital. Ils ne modifient pas automatiquement la valeur actuelle du bot.</p>
+
+        <details class="movementEntryDetails">
+          <summary>+ Ajouter un mouvement lié</summary>
+          <div class="movementEntryBox">
+            <div class="twoCols">
+              <div>
+                <label>Date</label>
+                <input id="botMoveDate" type="date">
+              </div>
+              <div>
+                <label>Direction</label>
+                <select id="botMoveDirection">
+                  <option value="IN">Vers le bot</option>
+                  <option value="OUT">Hors du bot</option>
+                </select>
+              </div>
+            </div>
+
+            <label>Compte / emplacement en face</label>
+            <select id="botMoveCounterparty"></select>
+
+            <label>Qualification</label>
+            <select id="botMoveRole">
+              <option value="FINANCING">Financement du bot</option>
+              <option value="REINVESTMENT">Réinvestissement de gains</option>
+            </select>
+
+            <label>Montant EUR</label>
+            <input id="botMoveAmount" inputmode="decimal" placeholder="0,00">
+
+            <label>Note facultative</label>
+            <input id="botMoveNote" placeholder="ex. transfert depuis Funding">
+
+            <div class="warning small">
+              Ce mouvement est un événement comptable. Il n’écrase pas la valeur actuelle observée du bot.
+            </div>
+            <button id="saveBotMovement" type="button">Enregistrer le mouvement</button>
+          </div>
+        </details>
+
+        <details class="movementEntryDetails feeEntryDetails">
+          <summary>+ Ajouter des frais liés au bot</summary>
+          <div class="movementEntryBox">
+            <label>Date</label>
+            <input id="botFeeDate" type="date">
+
+            <label>Montant EUR</label>
+            <input id="botFeeAmount" inputmode="decimal" placeholder="0,00">
+
+            <label>Traitement du frais</label>
+            <select id="botFeeTreatment">
+              <option value="REFLECTED_IN_VALUE">Déjà reflété dans la valeur du bot</option>
+              <option value="EXTERNAL_ACCRUAL">Payé en dehors de la valeur du bot</option>
+              <option value="TRANSFER_GAP">Écart de transfert déjà inclus</option>
+              <option value="INCLUDED_IN_PLATFORM_METRIC">Déjà inclus dans une métrique plateforme</option>
+              <option value="UNKNOWN">À vérifier</option>
+            </select>
+
+            <div id="botFeeHelp" class="feeHelp"></div>
+
+            <label>Note facultative</label>
+            <input id="botFeeNote" placeholder="ex. frais de retrait, coût externe…">
+
+            <div class="warning small">
+              GridLedger ne soustrait séparément que les frais « Payé en dehors de la valeur du bot ». Les autres sont documentés sans être comptés une deuxième fois.
+            </div>
+            <button id="saveBotFee" type="button">Enregistrer les frais</button>
+          </div>
+        </details>
+
+        <div id="botMovementHistory"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Cycle de vie & stratégie</h2>
+        <div id="botLifecycleStatus" class="muted"></div>
+
+        <details id="botStrategyDetails" class="movementEntryDetails">
+          <summary>+ Noter un changement de stratégie</summary>
+          <div class="movementEntryBox">
+            <label>Date</label>
+            <input id="strategyDate" type="date">
+            <label>Note / nouvelle plage / changement</label>
+            <input id="strategyNote" placeholder="ex. nouvelle plage de prix">
+            <div class="warning small">Le changement crée une nouvelle période explicative. La performance GridLedger reste continue.</div>
+            <button id="saveStrategyEpoch">Enregistrer le changement</button>
+          </div>
+        </details>
+        <div id="strategyHistory"></div>
+
+        <details id="botCloseDetails" class="movementEntryDetails dangerDetails">
+          <summary>Clôturer le bot</summary>
+          <div class="movementEntryBox">
+            <label>Date de clôture</label>
+            <input id="botCloseDate" type="date">
+            <label>Destination de la récupération</label>
+            <select id="botCloseDestination"></select>
+            <label>Montant récupéré EUR</label>
+            <input id="botCloseAmount" inputmode="decimal" placeholder="0,00">
+            <div class="warning small">La clôture crée un transfert de récupération et met la valeur du bot à zéro. Elle ne crée pas une deuxième « valeur récupérée ».</div>
+            <button id="closeBotLifecycle" class="danger" type="button">Clôturer le bot</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead"><h2>Justificatifs liés</h2><span id="botLinkedDocCount" class="smallmuted"></span></div>
+        <div id="botDocDuplicateNotice" class="duplicateNotice" hidden></div>
+        <div id="botLinkedDocs"></div>
+      </div>
+    </section>
+
+    <section id="documents" class="screen">
+      <div class="panel">
+        <h2>Ajouter un document chiffré</h2>
+        <p class="muted">Photos, captures, PDF ou CSV. Le contenu et ses métadonnées sont chiffrés avant stockage local.</p>
+        <input id="docFile" type="file" accept="image/*,.pdf,.csv,text/csv,application/pdf">
+        <label>Titre</label><input id="docTitle" placeholder="ex. relevé exchange">
+        <div class="twoCols">
+          <div><label>Année</label><input id="docYear" inputmode="numeric"></div>
+          <div><label>Catégorie</label>
+            <select id="docCategory">
+              <option value="EXCHANGE">Exchange</option>
+              <option value="BOT">Bot</option>
+              <option value="BANK">Banque</option>
+              <option value="BROKER">Courtier</option>
+              <option value="FEE">Frais</option>
+              <option value="TAX">Fiscal</option>
+              <option value="OTHER">Autre</option>
+            </select>
+          </div>
+        </div>
+        <label>Associer à</label><select id="docEntity"><option value="">Aucun élément</option></select>
+        <label>Note</label><textarea id="docNote" rows="3"></textarea>
+        <label class="check"><input id="docTax" type="checkbox"> Inclure dans le dossier fiscal</label>
+        <button id="saveDocBtn">Chiffrer et enregistrer</button>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead"><h2>Documents</h2><span id="storageInfo" class="smallmuted"></span></div>
+        <div id="documentsList"></div>
+      </div>
+    </section>
+
+    <section id="fiscal" class="screen">
+      <div class="panel">
+        <h2>Dossier fiscal annuel</h2>
+        <div class="twoCols">
+          <div><label>Année</label><select id="fiscalYear"></select></div>
+          <div><label>Profil pays</label>
+            <select id="fiscalCountry">
+              <option value="MANUAL">Manuel / à valider</option>
+              <option value="BE">Belgique — à valider</option>
+              <option value="FR">France — à valider</option>
+              <option value="LU">Luxembourg — à valider</option>
+            </select>
+          </div>
+        </div>
+        <div class="warning small">
+          GridLedger organise les pièces et hypothèses. Il ne remplace pas une déclaration officielle ni un fiscaliste.
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Résumé du dossier</h2>
+        <div class="rows">
+          <div><span>Pièces fiscales</span><b id="fiscalDocs">0</b></div>
+          <div><span>Catégories représentées</span><b id="fiscalSources">0</b></div>
+          <div><span>Éléments à vérifier</span><b id="fiscalVerify">0</b></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Pièces associées</h2>
+        <div id="fiscalDocuments"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Scénario fiscal manuel</h2>
+        <div class="warning small">
+          Outil de préparation uniquement. Aucun taux légal n’est fourni automatiquement et ce calcul ne remplace pas une déclaration officielle.
+        </div>
+        <div class="twoCols">
+          <div>
+            <label>Gains réalisés saisis EUR</label>
+            <input id="taxRealized" inputmode="decimal" placeholder="0,00">
+          </div>
+          <div>
+            <label>Autres revenus saisis EUR</label>
+            <input id="taxOtherIncome" inputmode="decimal" placeholder="0,00">
+          </div>
+        </div>
+        <div class="twoCols">
+          <div>
+            <label>Pertes imputées EUR</label>
+            <input id="taxLossOffset" inputmode="decimal" placeholder="0,00">
+          </div>
+          <div>
+            <label>Abattement / exonération EUR</label>
+            <input id="taxAllowance" inputmode="decimal" placeholder="0,00">
+          </div>
+        </div>
+        <label>Taux de provision choisi (%)</label>
+        <input id="taxProvisionRate" inputmode="decimal" placeholder="0">
+        <button id="saveTaxScenario">Enregistrer le scénario</button>
+
+        <div class="rows taxScenarioResult">
+          <div><span>Base estimée</span><b id="taxEstimatedBase">0,00 €</b></div>
+          <div><span>Provision indicative</span><b id="taxEstimatedReserve">0,00 €</b></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Traitement à documenter</h2>
+        <div class="denseRows">
+          <div><span>Apport extérieur</span><b>Non assimilé à un gain</b></div>
+          <div><span>Transfert interne</span><b>Neutre globalement</b></div>
+          <div><span>Grid Profit / profit bot</span><b>À qualifier selon le pays</b></div>
+          <div><span>P&L latent</span><b>Non réalisé</b></div>
+          <div><span>Conversion crypto</span><b>À qualifier selon le pays</b></div>
+          <div><span>Frais</span><b>Conserver les justificatifs</b></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Export fiscal</h2>
+        <p class="muted">L’index fiscal ne contient pas les fichiers eux-mêmes. Pour une sauvegarde complète, utilise Sauvegarde chiffrée.</p>
+        <button id="exportFiscal">Exporter l’index fiscal</button>
+      </div>
+    </section>
+
+
+    <section id="patrimoine" class="screen">
+      <div class="panelHead stickyHead">
+        <h2>Patrimoine</h2>
+        <button id="openAddLocation">+ Ajouter</button>
+      </div>
+
+      <div class="metrics patrimoineMetrics">
+        <div class="metric"><span>Mobilisable</span><b id="patMobilisable">0,00 €</b></div>
+        <div class="metric"><span>Protégé</span><b id="patProtected">0,00 €</b></div>
+        <div class="metric"><span>Illiquide</span><b id="patIlliquid">0,00 €</b></div>
+        <div class="metric"><span>Total</span><b id="patTotal">0,00 €</b></div>
+      </div>
+
+      <div class="panel" id="addLocationPanel" hidden>
+        <h2>Ajouter un emplacement / actif</h2>
+        <label>Nom</label>
+        <input id="newLocName" placeholder="ex. Compte espèces, ETF, Réserve">
+        <div class="twoCols">
+          <div>
+            <label>Type</label>
+            <select id="newLocType">
+              <option value="ACCOUNT">Compte / cash</option>
+              <option value="ASSET">Actif</option>
+              <option value="OTHER">Autre</option>
+            </select>
+          </div>
+          <div>
+            <label>Classe</label>
+            <select id="newLocClass">
+              <option value="MOBILISABLE">Mobilisable</option>
+              <option value="PROTECTED">Protégé</option>
+              <option value="ILLIQUID">Illiquide</option>
+            </select>
+          </div>
+        </div>
+        <div class="twoCols">
+          <div>
+            <label>Valeur d’ouverture EUR</label>
+            <input id="newLocBaseline" inputmode="decimal" placeholder="0,00">
+          </div>
+          <div>
+            <label>Valeur actuelle EUR</label>
+            <input id="newLocValue" inputmode="decimal" placeholder="0,00">
+          </div>
+        </div>
+        <div class="warning small">
+          Une valeur d’ouverture représente ce qui existait déjà avant GridLedger. Ce n’est pas un faux apport.
+        </div>
+        <button id="saveNewLocation">Enregistrer l’actif</button>
+      </div>
+
+      <div class="panel">
+        <h2>Mouvement comptable</h2>
+        <p class="muted">Apports, distributions et transferts sont enregistrés séparément des observations de valeur.</p>
+        <div class="twoCols">
+          <div>
+            <label>Type</label>
+            <select id="generalMoveType">
+              <option value="CONTRIBUTION">Apport extérieur</option>
+              <option value="DISTRIBUTION">Distribution extérieure</option>
+              <option value="TRANSFER">Transfert interne</option>
+            </select>
+          </div>
+          <div>
+            <label>Date</label>
+            <input id="generalMoveDate" type="date">
+          </div>
+        </div>
+        <div id="generalMoveFromWrap">
+          <label>Depuis</label>
+          <select id="generalMoveFrom"></select>
+        </div>
+        <div id="generalMoveToWrap">
+          <label>Vers</label>
+          <select id="generalMoveTo"></select>
+        </div>
+        <label>Montant EUR</label>
+        <input id="generalMoveAmount" inputmode="decimal" placeholder="0,00">
+        <label>Note facultative</label>
+        <input id="generalMoveNote" placeholder="Provenance / destination / raison">
+        <div class="warning small">
+          Un mouvement n’écrase pas automatiquement les valeurs observées. Mets ensuite à jour l’actif concerné si sa valeur a réellement changé.
+        </div>
+        <button id="saveGeneralMovement">Enregistrer le mouvement</button>
+      </div>
+
+      <div class="panel">
+        <h2>Actifs et emplacements</h2>
+        <div id="patrimoineList"></div>
+      </div>
+    </section>
+
+    <section id="history" class="screen">
+      <div class="panel">
+        <div class="panelHead">
+          <h2>Historique</h2>
+          <select id="historyFilter" class="compactSelect">
+            <option value="ALL">Tout</option>
+            <option value="MOVEMENTS">Mouvements</option>
+            <option value="SNAPSHOTS">Snapshots</option>
+            <option value="AUDIT">Audit</option>
+          </select>
+        </div>
+        <p class="muted">Les corrections se font par annulation / contre-écriture. Les événements d’origine ne sont pas supprimés.</p>
+        <div id="historyList"></div>
+      </div>
+    </section>
+
+    <section id="goals" class="screen">
+      <div class="panel">
+        <h2>Objectifs</h2>
+        <p class="muted">Ces objectifs servent au pilotage. Ils ne constituent pas une promesse de rendement.</p>
+        <label>Objectif de patrimoine EUR</label>
+        <input id="goalWealth" inputmode="decimal" placeholder="0,00">
+        <label>Objectif de réserve protégée EUR</label>
+        <input id="goalProtected" inputmode="decimal" placeholder="0,00">
+        <label>Part maximale souhaitée en bots (%)</label>
+        <input id="goalBotMaxPct" inputmode="decimal" placeholder="0">
+        <label>Note / règle personnelle</label>
+        <textarea id="goalNote" placeholder="ex. conserver une réserve avant d’augmenter l’allocation bots"></textarea>
+        <button id="saveGoals">Enregistrer les objectifs</button>
+      </div>
+
+      <div class="panel">
+        <h2>Progression</h2>
+        <div id="goalsProgress"></div>
+      </div>
+    </section>
+
+    <section id="quality" class="screen">
+      <div class="panel">
+        <div class="panelHead"><h2>Qualité des données</h2><button id="refreshQuality">Actualiser</button></div>
+        <div class="qualitySummary">
+          <div><span>Fiables</span><b id="qualityCertain">0</b></div>
+          <div><span>Estimés</span><b id="qualityEstimated">0</b></div>
+          <div><span>À vérifier</span><b id="qualityVerify">0</b></div>
+          <div><span>Alertes</span><b id="qualityAlerts">0</b></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Contrôles automatiques</h2>
+        <div id="qualityChecks"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Provenance</h2>
+        <div id="qualitySources"></div>
+      </div>
+    </section>
+
+    <section id="settings" class="screen">
+      <div class="panel">
+        <h2>Navigation avancée</h2>
+        <div class="moreGrid">
+          <button data-go="patrimoine">Patrimoine</button>
+          <button data-go="history">Historique</button>
+          <button data-go="goals">Objectifs</button>
+          <button data-go="quality">Qualité</button>
+        </div>
+      </div>
+
+      <div class="panel personalImportPanel">
+        <h2>Importer mon tableau de base</h2>
+        <div class="personalBadge">IMPORT LOCAL · AUCUN ENVOI INTERNET</div>
+        <p class="muted">
+          Après avoir créé ton coffre, choisis le fichier Excel de base. GridLedger lit localement les valeurs utiles,
+          les transforme en valeurs d’ouverture, puis les stocke dans le coffre chiffré.
+        </p>
+        <label class="filebtn personalImportButton">
+          Choisir le fichier .xlsx
+          <input id="importBaseWorkbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+        </label>
+        <div id="baseWorkbookStatus" class="importStatus">Aucun tableau importé.</div>
+        <div class="warning small">
+          Les versements futurs et hypothèses de rendement restent du planning : ils ne sont jamais créés comme opérations comptables réelles.
+        </div>
+        <div id="planningImported" class="planningImported"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Assistant GridLedger</h2>
+        <div class="rows">
+          <div><span>Connexion IA</span><b>Non activée</b></div>
+          <div><span>Données envoyées</span><b>Aucune</b></div>
+        </div>
+        <p class="muted">Une future connexion à l’API OpenAI passera par un service sécurisé optionnel. Aucune clé API ne sera stockée dans cette PWA et aucune écriture comptable ne sera automatique.</p>
+      </div>
+
+      <div class="panel">
+        <h2>Sécurité du coffre</h2>
+        <div class="rows">
+          <div><span>Chiffrement</span><b>AES-GCM 256</b></div>
+          <div><span>Dérivation du mot de passe</span><b>PBKDF2-SHA256</b></div>
+          <div><span>Stockage</span><b>Local / IndexedDB</b></div>
+        </div>
+        <label>Verrouillage automatique</label>
+        <select id="autoLockMinutes">
+          <option value="2">2 minutes</option>
+          <option value="5">5 minutes</option>
+          <option value="15">15 minutes</option>
+          <option value="30">30 minutes</option>
+        </select>
+      </div>
+
+      <div class="panel">
+        <h2>Sauvegarde complète chiffrée</h2>
+        <p class="muted">Inclut les données comptables et les documents sous leur forme déjà chiffrée. Conserve une copie hors du téléphone.</p>
+        <button id="exportBackup">Créer une sauvegarde</button>
+        <label class="filebtn">Restaurer une sauvegarde<input id="importBackup" type="file" accept=".json,.gridledger,application/json" hidden></label>
+      </div>
+
+      <div class="panel">
+        <h2>Compatibilité alpha</h2>
+        <p class="muted">Tu peux importer un export JSON de l’ancienne alpha. Les données importées seront ensuite stockées chiffrées.</p>
+        <label class="filebtn">Importer ancien JSON<input id="importLegacyState" type="file" accept=".json,application/json" hidden></label>
+      </div>
+
+      <div class="panel dangerPanel">
+        <h2>Zone de test</h2>
+        <button class="danger" id="resetAll">Effacer le coffre local</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="captureZoomModal" class="zoomModal" hidden>
+    <button id="closeZoomBtn" class="zoomClose">Fermer</button>
+    <img id="captureZoomImage" alt="Capture agrandie">
+  </div>
+
+  <div id="pointerOCRModal" class="pointerModal" hidden>
+    <div class="pointerTop">
+      <div>
+        <b id="pointerOCRTitle">Pointer la valeur</b>
+        <div class="smallmuted">Touche directement le nombre à lire. Aucune donnée n'est enregistrée automatiquement.</div>
+      </div>
+      <button id="closePointerOCRBtn">Annuler</button>
+    </div>
+    <div id="pointerImageWrap" class="pointerImageWrap">
+      <img id="pointerOCRImage" alt="Capture à pointer">
+      <div id="pointerCrosshair" class="pointerCrosshair" hidden></div>
+    </div>
+    <div id="pointerOCRStatus" class="pointerStatus">En attente du toucher.</div>
+    <div class="pointerManualBox">
+      <label>Valeur lue visuellement</label>
+      <div class="pointerManualRow">
+        <input id="pointerManualValue" inputmode="decimal" placeholder="ex. 39,49">
+        <button id="usePointerManualValue">Utiliser cette valeur</button>
+      </div>
+      <div class="smallmuted">Utilise ce champ si l’OCR n’est pas parfaitement lisible. La valeur restera « Estimé » jusqu’à « J’ai vérifié ».</div>
+    </div>
+  </div>
+
+  <nav class="bottomNav">
+    <button data-screen="dashboard" class="active"><span>⌂</span>Accueil</button>
+    <button data-screen="capture"><span>▣</span>Capture</button>
+    <button data-screen="bots"><span>▦</span>Bots</button>
+    <button data-screen="documents"><span>▤</span>Docs</button>
+    <button data-screen="fiscal"><span>§</span>Fiscal</button>
+    <button data-screen="settings"><span>⚙</span>Plus</button>
+  </nav>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
