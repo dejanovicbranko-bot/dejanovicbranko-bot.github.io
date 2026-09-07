@@ -68,9 +68,22 @@
 
       <div class="metrics">
         <div class="metric"><span>Bots</span><b id="botValue">0,00 €</b></div>
-        <div class="metric"><span>Protégé</span><b id="protectedValue">0,00 €</b></div>
+        <div class="metric"><span>Long terme + réserve</span><b id="protectedValue">0,00 €</b></div>
+        <div class="metric"><span>Apports extérieurs</span><b id="contributionValue">0,00 €</b></div>
+        <div class="metric"><span>Distributions</span><b id="distributionValue">0,00 €</b></div>
         <div class="metric"><span>Documents</span><b id="docCount">0</b></div>
         <div class="metric"><span>Fiscal</span><b id="taxDocCount">0 pièce</b></div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead"><h2>Où est mon capital ?</h2><button class="linkbtn" data-go="patrimoine">Gérer</button></div>
+        <div id="dashboardAssets" class="dashboardAssetList"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead"><h2>Flux comptables</h2><button class="linkbtn" data-go="history">Historique</button></div>
+        <div id="dashboardFlows" class="flowGrid"></div>
+        <div class="smallmuted dashboardAccountingNote">Les transferts internes sont affichés pour le suivi mais restent neutres dans la performance globale.</div>
       </div>
 
       <div class="panel">
@@ -100,6 +113,17 @@
         <div id="dashboardFiscal" class="muted">Aucune pièce fiscale.</div>
       </div>
 
+      <div class="panel">
+        <div class="panelHead"><h2>Activité récente</h2><button class="linkbtn" data-go="history">Tout voir</button></div>
+        <div id="dashboardRecentActivity" class="recentActivity"></div>
+      </div>
+
+      <div class="panel assistantPanel">
+        <div class="panelHead"><h2>Assistant GridLedger</h2><button class="linkbtn" data-go="assistant">Ouvrir</button></div>
+        <div id="dashboardAssistantStatus" class="assistantStatus">Pont local prêt · rien n’est envoyé automatiquement.</div>
+        <p class="muted">Tu peux partager un résumé contrôlé de GridLedger ou une capture vers ChatGPT depuis Android, sans donner accès au coffre.</p>
+      </div>
+
       <div class="panel securePanel">
         <h2>Sécurité</h2>
         <div class="rows">
@@ -126,6 +150,7 @@
         <div class="smallmuted">Pour une capture d’écran déjà enregistrée, utilise « Choisir une image ».</div>
         <div id="capturePreview" class="capturePreview">Aucune image</div>
         <button id="zoomCaptureBtn" class="secondaryButton" hidden>Voir la capture en grand</button>
+        <button id="shareCaptureAssistant" class="assistantShareButton" hidden>Partager cette capture à ChatGPT</button>
         <label>Application / source</label>
         <input id="captureSource" placeholder="Détection automatique : Pionex, Bybit, Bitstack…">
         <label>Type</label>
@@ -551,7 +576,7 @@
 
       <div class="metrics patrimoineMetrics">
         <div class="metric"><span>Mobilisable</span><b id="patMobilisable">0,00 €</b></div>
-        <div class="metric"><span>Protégé</span><b id="patProtected">0,00 €</b></div>
+        <div class="metric"><span>Long terme + réserve</span><b id="patProtected">0,00 €</b></div>
         <div class="metric"><span>Illiquide</span><b id="patIlliquid">0,00 €</b></div>
         <div class="metric"><span>Total</span><b id="patTotal">0,00 €</b></div>
       </div>
@@ -573,7 +598,7 @@
             <label>Classe</label>
             <select id="newLocClass">
               <option value="MOBILISABLE">Mobilisable</option>
-              <option value="PROTECTED">Protégé</option>
+              <option value="PROTECTED">Long terme + réserve</option>
               <option value="ILLIQUID">Illiquide</option>
             </select>
           </div>
@@ -655,9 +680,9 @@
       <div class="panel">
         <h2>Objectifs</h2>
         <p class="muted">Ces objectifs servent au pilotage. Ils ne constituent pas une promesse de rendement.</p>
-        <label>Objectif de patrimoine EUR</label>
+        <label>Objectif de capital financier EUR</label>
         <input id="goalWealth" inputmode="decimal" placeholder="0,00">
-        <label>Objectif de réserve protégée EUR</label>
+        <label>Objectif long terme + réserve EUR</label>
         <input id="goalProtected" inputmode="decimal" placeholder="0,00">
         <label>Part maximale souhaitée en bots (%)</label>
         <input id="goalBotMaxPct" inputmode="decimal" placeholder="0">
@@ -694,14 +719,56 @@
       </div>
     </section>
 
+    <section id="assistant" class="screen">
+      <div class="panel assistantPanel">
+        <h2>Assistant GridLedger</h2>
+        <div class="personalBadge">PONT LOCAL · V1</div>
+        <p class="muted">GridLedger prépare uniquement les données utiles. Rien n’est envoyé tant que tu n’utilises pas le bouton de partage Android.</p>
+        <div class="rows">
+          <div><span>Lecture du coffre par ChatGPT</span><b>Non</b></div>
+          <div><span>Partage contrôlé</span><b>Disponible</b></div>
+          <div><span>Écriture comptable automatique</span><b>Bloquée</b></div>
+          <div><span>Documents / mot de passe inclus</span><b>Jamais</b></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead"><h2>Contexte pour ChatGPT</h2><button id="assistantRefreshContext" class="linkbtn">Actualiser</button></div>
+        <p class="muted">Le contexte contient le capital financier, les flux, les bots, les métriques natives, les objectifs et les alertes de cohérence. Il exclut le mot de passe, la sauvegarde, les fichiers et les captures brutes.</p>
+        <textarea id="assistantContextPreview" class="assistantPreview" rows="14" readonly></textarea>
+        <div class="assistantActions">
+          <button id="assistantShareContext">Partager vers ChatGPT</button>
+          <button id="assistantCopyContext" class="secondaryButton">Copier le contexte</button>
+        </div>
+        <div id="assistantShareStatus" class="smallmuted">Aucune donnée envoyée.</div>
+      </div>
+
+      <div class="panel">
+        <h2>Captures d’écran</h2>
+        <p class="muted">Dans l’onglet Capture, charge une image puis utilise « Partager cette capture à ChatGPT ». Android ouvre sa feuille de partage : tu choisis toi-même ChatGPT.</p>
+        <div class="warning small">Cette v2.2 ne permet pas encore à ChatGPT de réécrire directement le coffre. La future connexion serveur passera par une file de propositions avec confirmation humaine avant chaque écriture.</div>
+      </div>
+
+      <div class="panel">
+        <h2>Préparation du futur lien direct</h2>
+        <div class="rows">
+          <div><span>Résumé portefeuille</span><b>Prêt</b></div>
+          <div><span>Lecture bots / mouvements</span><b>Prêt à exposer</b></div>
+          <div><span>Analyse image IA</span><b>À brancher côté serveur</b></div>
+          <div><span>Propositions d’écriture</span><b>Validation humaine obligatoire</b></div>
+        </div>
+      </div>
+    </section>
+
     <section id="settings" class="screen">
       <div class="panel">
         <h2>Navigation avancée</h2>
         <div class="moreGrid">
-          <button data-go="patrimoine">Patrimoine</button>
+          <button data-go="patrimoine">Capital financier</button>
           <button data-go="history">Historique</button>
           <button data-go="goals">Objectifs</button>
           <button data-go="quality">Qualité</button>
+          <button data-go="assistant">Assistant</button>
         </div>
       </div>
 
@@ -726,10 +793,13 @@
       <div class="panel">
         <h2>Assistant GridLedger</h2>
         <div class="rows">
-          <div><span>Connexion IA</span><b>Non activée</b></div>
-          <div><span>Données envoyées</span><b>Aucune</b></div>
+          <div><span>Pont local ChatGPT</span><b>Activé</b></div>
+          <div><span>Connexion serveur directe</span><b>Pas encore</b></div>
+          <div><span>Données envoyées automatiquement</span><b>Aucune</b></div>
+          <div><span>Version</span><b id="appVersion">2.2</b></div>
         </div>
-        <p class="muted">Une future connexion à l’API OpenAI passera par un service sécurisé optionnel. Aucune clé API ne sera stockée dans cette PWA et aucune écriture comptable ne sera automatique.</p>
+        <button data-go="assistant" class="secondaryButton">Ouvrir l’Assistant</button>
+        <p class="muted">Le partage actuel utilise uniquement la feuille de partage Android. La future API restera côté serveur : aucune clé secrète ne sera placée dans cette PWA publique.</p>
       </div>
 
       <div class="panel">

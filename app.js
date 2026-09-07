@@ -4,6 +4,7 @@ const DB_NAME='gridledger_personnel_secure_v2_1';
 const DB_VERSION=1;
 const STATE_ID='state';
 const DEFAULT_ITERATIONS=310000;
+const APP_VERSION='2.2';
 
 let vaultKey=null;
 let currentState=null;
@@ -44,6 +45,7 @@ function ensureStateShape(s){
   s.version=2;
   s.settings=s.settings||{};
   if(!s.settings.autoLockMinutes)s.settings.autoLockMinutes=5;
+  s.settings.aiBridge=s.settings.aiBridge||{mode:'LOCAL_SHARE',automaticWrites:false};
   s.locations=Array.isArray(s.locations)?s.locations:[];
   s.bots=Array.isArray(s.bots)?s.bots:[];
   s.movements=Array.isArray(s.movements)?s.movements:[];
@@ -170,6 +172,159 @@ function botAccounting(b,s){
   };
 }
 function botPerf(b,s){return botAccounting(b,s).performance}
+function portfolioFlowSummary(s){
+  const moves=s.movements||[];
+  const feeMoves=moves.filter(m=>m.type==='FEE');
+  return {
+    opening:baseline(s),
+    contributions:contributions(s),
+    distributions:distributions(s),
+    internalTransfers:moves.filter(m=>m.type==='TRANSFER').reduce((a,m)=>a+Math.abs(Number(m.value||0)),0),
+    fees:feeMoves.reduce((a,m)=>a+Math.abs(Number(m.value||0)),0),
+    externalAccrualFees:feeMoves.filter(m=>m.feeTreatment==='EXTERNAL_ACCRUAL').reduce((a,m)=>a+Math.abs(Number(m.value||0)),0)
+  };
+}
+function dateOnlyLabel(v){
+  if(!v)return 'Jamais';
+  try{return new Date(v.length===10?v+'T12:00:00':v).toLocaleDateString('fr-BE')}catch{return String(v)}
+}
+function daysSince(v){
+  if(!v)return null;
+  const d=new Date(v.length===10?v+'T12:00:00':v);
+  if(Number.isNaN(d.getTime()))return null;
+  return Math.max(0,Math.floor((Date.now()-d.getTime())/86400000));
+}
+function freshnessLabel(v){
+  const d=daysSince(v);
+  if(d===null)return {label:'Jamais mis à jour',cls:'freshBad'};
+  if(d<=7)return {label:d===0?'Aujourd’hui':`${d} j`,cls:'freshGood'};
+  if(d<=30)return {label:`${d} j`,cls:'freshWarn'};
+  return {label:`${d} j`,cls:'freshBad'};
+}
+function latestObservationMomentForLocation(s,loc){
+  const moments=(s.observations||[]).filter(o=>o.locationId===loc.id).map(o=>o.observedAt||o.date).filter(Boolean).sort();
+  return moments[moments.length-1]||loc.lastObservedAt||null;
+}
+function latestSnapshotForBot(s,b){
+  const snaps=(s.snapshots||[]).filter(x=>x.botId===b.id).slice().sort((a,z)=>String(snapshotDateForRange(a)||'').localeCompare(String(snapshotDateForRange(z)||'')));
+  return snaps[snaps.length-1]||null;
+}
+function recentActivityItems(s,limit=6){
+  const out=[];
+  for(const m of s.movements||[]){
+    const route=(()=>{
+      const from=(s.locations||[]).find(l=>l.id===m.from)?.name;
+      const to=(s.locations||[]).find(l=>l.id===m.to)?.name;
+      if(m.type==='CONTRIBUTION')return `Extérieur → ${to||'capital financier'}`;
+      if(m.type==='DISTRIBUTION')return `${from||'capital financier'} → extérieur`;
+      if(m.type==='TRANSFER')return `${from||'—'} → ${to||'—'}`;
+      return (s.locations||[]).find(l=>l.id===m.locationId)?.name||'Capital financier';
+    })();
+    out.push({moment:m.createdAt||m.date||'',title:movementTypeLabel(m.type),detail:`${route} · ${money(m.value)}`});
+  }
+  for(const sn of s.snapshots||[]){
+    const b=(s.bots||[]).find(x=>x.id===sn.botId);
+    out.push({moment:sn.capturedAt||sn.date||'',title:'Snapshot bot',detail:`${b?.name||'Bot'} · ${sn.nativeUnit||sn.unit||'unité native'}`});
+  }
+  for(const o of s.observations||[]){
+    const l=(s.locations||[]).find(x=>x.id===o.locationId);
+    if(o.sourceType==='BASE_WORKBOOK')continue;
+    out.push({moment:o.observedAt||o.date||'',title:'Valeur observée',detail:`${l?.name||'Actif'} · ${money(o.value)}`});
+  }
+  return out.sort((a,b)=>String(b.moment).localeCompare(String(a.moment))).slice(0,limit);
+}
+function buildAssistantContext(s){
+  const flow=portfolioFlowSummary(s);
+  return {
+    schema:'gridledger-context-v1',
+    appVersion:APP_VERSION,
+    generatedAt:nowIso(),
+    reportingCurrency:s.reportingCurrency||'EUR',
+    privacy:{userInitiatedShare:true,rawDocumentsIncluded:false,rawScreenshotsIncluded:false,passwordOrKeysIncluded:false},
+    summary:{
+      capitalFinancial:total(s),openingValue:flow.opening,economicPerformance:performance(s),
+      externalContributions:flow.contributions,externalDistributions:flow.distributions,
+      internalTransferVolume:flow.internalTransfers,feesRecorded:flow.fees,externalAccrualFees:flow.externalAccrualFees
+    },
+    locations:(s.locations||[]).map(l=>({
+      id:l.id,name:l.name,type:l.type,class:l.class,currentValueEUR:Number(l.balance||0),openingValueEUR:Number(l.baseline||0),
+      lastObservedAt:latestObservationMomentForLocation(s,l),confidence:l.confidence||'CERTAIN'
+    })),
+    bots:(s.bots||[]).map(b=>{
+      const a=botAccounting(b,s),sn=latestSnapshotForBot(s,b),native=b.lastNativeSnapshot||sn;
+      return {
+        id:b.id,name:b.name,platform:b.platform||'',pair:b.pair||'',status:b.status||'ACTIVE',
+        currentValueEUR:Number(b.value||0),openingValueEUR:a.opening,financingReceivedEUR:a.financing,
+        withdrawnGainEUR:a.withdrawnGain,reinvestmentEUR:a.reinvestment,feesRecordedEUR:a.fees,
+        economicPerformanceEUR:a.performance,lastValueObservedAt:b.valueObservedAt||latestObservationMomentForLocation(s,(s.locations||[]).find(l=>l.id===b.locationId)||{}),
+        nativeMetrics:native?{
+          date:native.date||sn?.date||null,unit:native.unit||native.nativeUnit||sn?.nativeUnit||null,
+          gridProfit:native.grid??native.gridProfitNative??sn?.gridProfitNative??null,
+          latentPnL:native.latent??native.latentNative??sn?.latentNative??null,
+          withdrawn:native.withdrawn??native.withdrawnNative??sn?.withdrawnNative??null,
+          valuationStatus:native.valuationStatus||sn?.valuationStatus||null
+        }:null
+      };
+    }),
+    goals:{capitalFinancialEUR:Number(s.goals?.wealth||0),longTermAndReserveEUR:Number(s.goals?.protected||0),botMaxPct:Number(s.goals?.botMaxPct||0)},
+    quality:stateQualityChecks(s).map(x=>({check:x.name,status:x.level,detail:x.detail})),
+    accountingRules:[
+      'Les transferts internes sont neutres globalement.',
+      'Grid Profit et P&L latent sont des métriques explicatives natives et ne doivent pas être additionnés à la performance économique.',
+      'Aucune écriture ne doit être créée sans validation humaine.'
+    ]
+  };
+}
+function assistantPromptAndContext(s){
+  const ctx=buildAssistantContext(s);
+  return `Contexte GridLedger généré par l’utilisateur. Analyse uniquement les données ci-dessous. Ne donne aucun ordre de trading, ne promets aucun rendement et ne suppose aucune donnée absente. Distingue performance économique, Grid Profit et P&L latent. Propose les vérifications ou mises à jour utiles, mais demande confirmation avant toute écriture comptable.\n\n${JSON.stringify(ctx,null,2)}`;
+}
+async function copyTextSafe(textValue){
+  if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(textValue);return true}
+  const ta=document.createElement('textarea');ta.value=textValue;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();
+  const ok=document.execCommand('copy');ta.remove();return ok;
+}
+function renderAssistant(){
+  if(!currentState)return;
+  const preview=$('assistantContextPreview');
+  if(preview)preview.value=assistantPromptAndContext(currentState);
+  if($('appVersion'))$('appVersion').textContent=APP_VERSION;
+}
+async function shareAssistantContext(){
+  const textValue=assistantPromptAndContext(currentState);
+  try{
+    if(navigator.share){
+      await navigator.share({title:'GridLedger · contexte pour ChatGPT',text:textValue});
+      $('assistantShareStatus').textContent='Partage Android ouvert. Les données n’ont été transmises qu’à l’application que tu as choisie.';
+      return;
+    }
+    await copyTextSafe(textValue);
+    $('assistantShareStatus').textContent='Partage système indisponible : contexte copié. Colle-le dans ChatGPT.';
+  }catch(e){
+    if(e?.name!=='AbortError')$('assistantShareStatus').textContent='Partage impossible. Utilise « Copier le contexte ».';
+  }
+}
+async function copyAssistantContext(){
+  try{await copyTextSafe(assistantPromptAndContext(currentState));$('assistantShareStatus').textContent='Contexte copié. Tu peux le coller dans ChatGPT.'}
+  catch{$('assistantShareStatus').textContent='Copie impossible sur ce navigateur.'}
+}
+async function shareCaptureToAssistant(){
+  if(!currentCaptureFile)return alert('Choisis d’abord une capture.');
+  const botHints=(currentState?.bots||[]).map(b=>`${b.id} | ${b.name} | ${b.platform||'plateforme inconnue'} | ${b.pair||'paire inconnue'}`).join('\n');
+  const instruction=`Analyse cette capture pour GridLedger. Identifie la plateforme, le bot probable, la paire, la date, la valeur courante, le Grid Profit, le P&L latent, les gains retirés et l’unité. N’invente aucun chiffre. Signale chaque champ incertain. Ne propose aucune transaction. Bots connus:\n${botHints||'Aucun bot connu.'}`;
+  try{
+    if(navigator.share && (!navigator.canShare || navigator.canShare({files:[currentCaptureFile]}))){
+      await navigator.share({title:'Capture GridLedger pour ChatGPT',text:instruction,files:[currentCaptureFile]});
+      $('ocrStatus').className='ocrStatus ok';
+      $('ocrStatus').textContent='Capture partagée via Android. GridLedger n’a rien enregistré automatiquement.';
+      return;
+    }
+    await copyTextSafe(instruction);
+    alert('Le partage de fichier n’est pas disponible ici. L’instruction a été copiée : ouvre ChatGPT et joins la capture manuellement.');
+  }catch(e){
+    if(e?.name!=='AbortError')alert('Partage impossible sur cet appareil.');
+  }
+}
 function bytesToB64(bytes){
   const u8=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);
   let s='';const CHUNK=0x8000;
@@ -367,7 +522,7 @@ function nav(screen){
   document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.bottomNav button').forEach(x=>x.classList.toggle('active',x.dataset.screen===screen));
   $(screen).classList.add('active');
-  const names={dashboard:'Tableau de bord',capture:'Capture intelligente',bots:'Bots',botDetail:'Détail du bot',documents:'Documents',fiscal:'Dossier fiscal',settings:'Plus',patrimoine:'Patrimoine',history:'Historique',goals:'Objectifs',quality:'Qualité des données'};
+  const names={dashboard:'Tableau de bord',capture:'Capture intelligente',bots:'Bots',botDetail:'Détail du bot',documents:'Documents',fiscal:'Dossier fiscal',settings:'Plus',patrimoine:'Capital financier',history:'Historique',goals:'Objectifs',quality:'Qualité des données',assistant:'Assistant GridLedger'};
   $('pageTitle').textContent=names[screen]||'GridLedger';
   window.scrollTo({top:0,behavior:'instant'});
   if(screen==='documents')renderDocuments();
@@ -378,15 +533,64 @@ function nav(screen){
   if(screen==='goals')renderGoals();
   if(screen==='quality')renderQuality();
   if(screen==='settings')renderImportedPlanning();
+  if(screen==='assistant')renderAssistant();
 }
 function renderDashboard(){
   const s=currentState;
+  const flow=portfolioFlowSummary(s);
+  const botTotal=s.bots.reduce((a,b)=>a+Number(b.value||0),0);
+  const protectedTotal=s.locations.filter(l=>l.class==='PROTECTED').reduce((a,l)=>a+Number(l.balance||0),0);
   $('totalValue').textContent=money(total(s));
   $('globalPerf').textContent=money(performance(s));
-  $('botValue').textContent=money(s.bots.reduce((a,b)=>a+Number(b.value||0),0));
-  $('protectedValue').textContent=money(s.locations.filter(l=>l.class==='PROTECTED').reduce((a,l)=>a+Number(l.balance||0),0));
+  $('botValue').textContent=money(botTotal);
+  $('protectedValue').textContent=money(protectedTotal);
+  if($('contributionValue'))$('contributionValue').textContent=money(flow.contributions);
+  if($('distributionValue'))$('distributionValue').textContent=money(flow.distributions);
   $('dashAutoLock').textContent=(s.settings?.autoLockMinutes||5)+' min';
-  $('dashboardBots').innerHTML=s.bots.map(b=>`<div class="botCard"><h3>${escapeHtml(b.name)} <span class="pill good">${escapeHtml(b.status)}</span></h3><div class="kv"><span>Valeur</span><b>${money(b.value)}</b></div><div class="kv"><span>Grid Profit natif</span><b>${b.lastNativeSnapshot?formatNative(b.lastNativeSnapshot.grid,b.lastNativeSnapshot.unit):'—'}</b></div><div class="kv"><span>P&L latent natif</span><b>${b.lastNativeSnapshot?formatNative(b.lastNativeSnapshot.latent,b.lastNativeSnapshot.unit):'—'}</b></div><div class="kv"><span>Performance GridLedger</span><b>${money(botPerf(b,s))}</b></div></div>`).join('');
+
+  const assetRows=(s.locations||[]).slice().sort((a,b)=>Number(b.balance||0)-Number(a.balance||0));
+  $('dashboardAssets').innerHTML=assetRows.map(l=>{
+    const when=latestObservationMomentForLocation(s,l),fresh=freshnessLabel(when);
+    const bot=(s.bots||[]).find(b=>b.locationId===l.id);
+    return `<div class="dashboardAssetRow">
+      <div class="dashboardAssetMain"><b>${escapeHtml(l.name)}</b><span>${escapeHtml(classLabel(l.class))}${bot?` · ${escapeHtml(bot.platform||'bot')}`:''}</span></div>
+      <div class="dashboardAssetValue"><b>${money(l.balance)}</b><span class="freshTag ${fresh.cls}">${escapeHtml(fresh.label)}</span></div>
+    </div>`;
+  }).join('')||'<div class="muted">Aucun actif financier.</div>';
+
+  $('dashboardFlows').innerHTML=`
+    <div><span>Valeur d’ouverture</span><b>${money(flow.opening)}</b></div>
+    <div><span>Apports extérieurs</span><b>${money(flow.contributions)}</b></div>
+    <div><span>Distributions extérieures</span><b>${money(flow.distributions)}</b></div>
+    <div><span>Transferts internes · volume</span><b>${money(flow.internalTransfers)}</b></div>
+    <div><span>Frais enregistrés</span><b>${money(flow.fees)}</b></div>
+    <div><span>Coûts externes séparés</span><b>${money(flow.externalAccrualFees)}</b></div>`;
+
+  $('dashboardBots').innerHTML=s.bots.map(b=>{
+    const a=botAccounting(b,s),sn=latestSnapshotForBot(s,b),ns=b.lastNativeSnapshot||sn;
+    const when=b.valueObservedAt||latestObservationMomentForLocation(s,(s.locations||[]).find(l=>l.id===b.locationId)||{});
+    const fresh=freshnessLabel(when);
+    const nativeUnit=ns?.unit||ns?.nativeUnit||'—';
+    const grid=ns?.grid??ns?.gridProfitNative;
+    const latent=ns?.latent??ns?.latentNative;
+    return `<div class="botCard botCardClickable dashboardBotDetailed" data-open-bot="${escapeHtml(b.id)}">
+      <div class="dashboardBotTop"><div><h3>${escapeHtml(b.name)}</h3><div class="smallmuted">${escapeHtml(b.platform||'Plateforme non définie')} · ${escapeHtml(b.pair||'Paire non définie')}</div></div><span class="freshTag ${fresh.cls}">${escapeHtml(fresh.label)}</span></div>
+      <div class="botDetailMiniGrid">
+        <div><span>Valeur actuelle</span><b>${money(b.value)}</b></div>
+        <div><span>Performance GridLedger</span><b>${money(a.performance)}</b></div>
+        <div><span>Ouverture</span><b>${money(a.opening)}</b></div>
+        <div><span>Financement reçu</span><b>${money(a.financing)}</b></div>
+        <div><span>Gains retirés</span><b>${money(a.withdrawnGain)}</b></div>
+        <div><span>Réinvesti</span><b>${money(a.reinvestment)}</b></div>
+        <div><span>Frais</span><b>${money(a.fees)}</b></div>
+        <div><span>Dernier relevé</span><b>${sn?.date?escapeHtml(dateOnlyLabel(sn.date)):'Aucun snapshot'}</b></div>
+      </div>
+      <div class="nativeMetricStrip"><span>Grid Profit · ${escapeHtml(nativeUnit)}</span><b>${grid===null||grid===undefined?'—':formatNative(grid,nativeUnit)}</b><span>P&L latent</span><b>${latent===null||latent===undefined?'—':formatNative(latent,nativeUnit)}</b></div>
+      <div class="botCardFooter"><button type="button" data-open-bot-btn="${escapeHtml(b.id)}">Voir le détail</button></div>
+    </div>`;
+  }).join('')||'<div class="muted">Aucun bot.</div>';
+  document.querySelectorAll('#dashboardBots [data-open-bot]').forEach(card=>card.addEventListener('click',e=>{if(e.target.closest('button'))return;openBotDetail(card.dataset.openBot)}));
+  document.querySelectorAll('#dashboardBots [data-open-bot-btn]').forEach(btn=>btn.addEventListener('click',()=>openBotDetail(btn.dataset.openBotBtn)));
 
   const mob=s.locations.filter(l=>l.class==='MOBILISABLE').reduce((a,l)=>a+Number(l.balance||0),0);
   const prot=s.locations.filter(l=>l.class==='PROTECTED').reduce((a,l)=>a+Number(l.balance||0),0);
@@ -397,17 +601,23 @@ function renderDashboard(){
     `<div class="allocMob" style="width:${pct(mob)}%"></div><div class="allocProt" style="width:${pct(prot)}%"></div><div class="allocIll" style="width:${pct(ill)}%"></div>`;
   $('dashboardAllocation').innerHTML=
     `<div><span>Mobilisable</span><b>${money(mob)} · ${pct(mob).toFixed(0)}%</b></div>`
-    +`<div><span>Protégé</span><b>${money(prot)} · ${pct(prot).toFixed(0)}%</b></div>`
+    +`<div><span>Long terme + réserve</span><b>${money(prot)} · ${pct(prot).toFixed(0)}%</b></div>`
     +(ill>0?`<div><span>Illiquide financier</span><b>${money(ill)} · ${pct(ill).toFixed(0)}%</b></div>`:'');
 
   const target=Number(s.goals?.wealth||0);
   const gp=target>0?Math.min(100,Math.max(0,total(s)/target*100)):0;
-  $('dashboardGoalText').textContent=target>0?`${money(total(s))} sur ${money(target)} · ${gp.toFixed(1)} %`:'Aucun objectif de patrimoine défini.';
+  const remaining=target>0?Math.max(0,target-total(s)):0;
+  $('dashboardGoalText').textContent=target>0?`${money(total(s))} sur ${money(target)} · ${gp.toFixed(1)} % · reste ${money(remaining)}`:'Aucun objectif de capital financier défini.';
   $('dashboardGoalProgress').style.width=gp+'%';
 
   const quick=stateQualityChecks(s);
   const alerts=quick.filter(x=>x.level!=='OK').length;
-  $('dashboardQuality').textContent=alerts?`${alerts} point(s) demandent ton attention.`:'Aucune alerte de cohérence détectée.';
+  const stale=s.locations.filter(l=>{const d=daysSince(latestObservationMomentForLocation(s,l));return d===null||d>30}).length;
+  $('dashboardQuality').textContent=alerts||stale?`${alerts} contrôle(s) à surveiller${stale?` · ${stale} valeur(s) ancienne(s)`:''}.`:'Données cohérentes et valeurs récentes.';
+
+  const recent=recentActivityItems(s);
+  $('dashboardRecentActivity').innerHTML=recent.map(x=>`<div class="recentRow"><div><b>${escapeHtml(x.title)}</b><span>${escapeHtml(x.detail)}</span></div><time>${escapeHtml(dateOnlyLabel(x.moment))}</time></div>`).join('')||'<div class="muted">Aucune activité récente après la situation d’ouverture.</div>';
+  if($('dashboardAssistantStatus'))$('dashboardAssistantStatus').textContent='Pont local ChatGPT prêt · partage uniquement sur ton action.';
 }
 async function renderDocCounts(){
   const docs=await getDocMetas(),tax=docs.filter(d=>d.includeTax);
@@ -1212,7 +1422,7 @@ function renderBotChart(bot,allSnaps){
   });
 }
 
-function classLabel(v){return {MOBILISABLE:'Mobilisable',PROTECTED:'Protégé',ILLIQUID:'Illiquide'}[v]||v||'—'}
+function classLabel(v){return {MOBILISABLE:'Mobilisable',PROTECTED:'Long terme + réserve',ILLIQUID:'Illiquide financier'}[v]||v||'—'}
 function locationTypeLabel(v){return {ACCOUNT:'Compte',ASSET:'Actif',BOT:'Bot',OTHER:'Autre'}[v]||v||'—'}
 function confidenceLabel(v){return {CERTAIN:'Certain',ESTIMATED:'Estimé',TO_VERIFY:'À vérifier'}[v]||'Certain'}
 function movementTypeLabel(v){return {CONTRIBUTION:'Apport extérieur',DISTRIBUTION:'Distribution extérieure',TRANSFER:'Transfert interne',FEE:'Frais'}[v]||v||'Mouvement'}
@@ -1426,7 +1636,7 @@ function renderGoals(){
   const botPct=total(currentState)>0?botValue/total(currentState)*100:0;
   $('goalsProgress').innerHTML=
     goalProgressCard('Capital financier',total(currentState),Number(g.wealth||0))
-    +goalProgressCard('Réserve protégée',protectedValue,Number(g.protected||0))
+    +goalProgressCard('Long terme + réserve',protectedValue,Number(g.protected||0))
     +`<div class="goalProgressCard"><div class="top"><b>Allocation bots</b><span>${botPct.toFixed(1)} %${Number(g.botMaxPct||0)>0?` / max ${Number(g.botMaxPct).toFixed(1)} %`:''}</span></div>
       <div class="progressTrack"><div class="progressFill" style="width:${Math.min(100,botPct)}%"></div></div></div>`
     +(g.note?`<div class="muted">${escapeHtml(g.note)}</div>`:'');
@@ -1462,6 +1672,9 @@ function stateQualityChecks(s){
 
   const unknownFees=s.movements.filter(m=>m.type==='FEE'&&(!m.feeTreatment||m.feeTreatment==='UNKNOWN'));
   checks.push({name:'Frais à qualifier',level:unknownFees.length?'WARN':'OK',detail:unknownFees.length?`${unknownFees.length} frais`:'Aucun'});
+
+  const staleLocations=s.locations.filter(l=>{const d=daysSince(latestObservationMomentForLocation(s,l));return d===null||d>30});
+  checks.push({name:'Valeurs de plus de 30 jours',level:staleLocations.length?'WARN':'OK',detail:staleLocations.length?`${staleLocations.length} actif(s)`:'Aucune'});
 
   const dup=duplicateIdCount();
   checks.push({name:'Identifiants dupliqués',level:dup?'BAD':'OK',detail:dup?`${dup} doublon(s)`:'Aucun'});
@@ -1841,7 +2054,7 @@ async function renderFiscal(){
   $('fiscalCountry').value=currentState.fiscal?.country||'MANUAL';
   renderTaxScenario();
 }
-function renderAll(){if(!currentState)return;ensureStateShape(currentState);renderDashboard();renderBots();renderEntityOptions();renderDocCounts();renderImportedPlanning();if($('patrimoine')?.classList.contains('active'))renderPatrimoine();if($('history')?.classList.contains('active'))renderHistory();if($('goals')?.classList.contains('active'))renderGoals();if($('quality')?.classList.contains('active'))renderQuality()}
+function renderAll(){if(!currentState)return;ensureStateShape(currentState);if($('appVersion'))$('appVersion').textContent=APP_VERSION;renderDashboard();renderBots();renderEntityOptions();renderDocCounts();renderImportedPlanning();if($('patrimoine')?.classList.contains('active'))renderPatrimoine();if($('history')?.classList.contains('active'))renderHistory();if($('goals')?.classList.contains('active'))renderGoals();if($('quality')?.classList.contains('active'))renderQuality();if($('assistant')?.classList.contains('active'))renderAssistant()}
 
 function parseLocalizedNumber(v){
   let s=String(v??'').trim().replace(/\u00a0/g,' ').replace(/\s/g,'');
@@ -2880,10 +3093,10 @@ async function saveCaptureBotSnapshot(){
   renderAll();
   if(documentId)await renderDocCounts();
 
-  $('captureResult').innerHTML=`<b>Snapshot enregistré.</b><p class="muted">${valuationStatus==='VALUED_EUR'?'La valeur EUR validée a été appliquée au patrimoine.':'Les métriques natives ont été conservées sans modifier la valeur patrimoniale en EUR.'}${documentId?' La capture est archivée dans le coffre chiffré.':''}</p>`;
+  $('captureResult').innerHTML=`<b>Snapshot enregistré.</b><p class="muted">${valuationStatus==='VALUED_EUR'?'La valeur EUR validée a été appliquée au capital financier.':'Les métriques natives ont été conservées sans modifier la valeur financière en EUR.'}${documentId?' La capture est archivée dans le coffre chiffré.':''}</p>`;
   $('captureProposalPanel').hidden=true;
   currentCaptureData=null;currentCaptureFile=null;captureParsed=null;captureOCRConfidence=null;
-  $('captureText').value='';$('capturePreview').innerHTML='Aucune image';$('zoomCaptureBtn').hidden=true;
+  $('captureText').value='';$('capturePreview').innerHTML='Aucune image';$('zoomCaptureBtn').hidden=true;if($('shareCaptureAssistant'))$('shareCaptureAssistant').hidden=true;
   $('captureGalleryInput').value='';$('captureCameraInput').value='';
   $('captureKeepImage').checked=false;
 }
@@ -2959,6 +3172,7 @@ $('saveDocBtn').addEventListener('click',saveDocument);
 $('captureAnalyze').addEventListener('click',analyzeCapture);
 $('toggleCaptureAdvanced').addEventListener('click',()=>{const on=document.body.classList.toggle('captureAdvanced');$('toggleCaptureAdvanced').textContent=on?'Masquer les outils avancés':'Afficher les outils avancés';});
 $('captureOCR').addEventListener('click',runCaptureOCR);
+$('shareCaptureAssistant').addEventListener('click',shareCaptureToAssistant);
 $('saveCaptureBot').addEventListener('click',saveCaptureBotSnapshot);
 $('rereadMissingBtn').addEventListener('click',rereadMissingFields);
 $('zoomCaptureBtn').addEventListener('click',()=>{if(!currentCaptureData)return;$('captureZoomImage').src=currentCaptureData;$('captureZoomModal').hidden=false;});
@@ -2991,6 +3205,7 @@ function handleCaptureFile(ev){
   $('captureResult').innerHTML='<span class="muted">Image chargée. Appuie sur « Lire l’image (OCR local) ».</span>';
   $('ocrStatus').className='ocrStatus';
   $('ocrStatus').textContent='Image prête pour l’OCR.';
+  if($('shareCaptureAssistant'))$('shareCaptureAssistant').hidden=false;
   const r=new FileReader();
   r.onload=()=>{
     currentCaptureData=r.result;
@@ -3016,6 +3231,9 @@ $('saveGeneralMovement').addEventListener('click',saveGeneralMovement);
 $('historyFilter').addEventListener('change',renderHistory);
 $('saveGoals').addEventListener('click',saveGoals);
 $('refreshQuality').addEventListener('click',renderQuality);
+$('assistantRefreshContext').addEventListener('click',renderAssistant);
+$('assistantShareContext').addEventListener('click',shareAssistantContext);
+$('assistantCopyContext').addEventListener('click',copyAssistantContext);
 $('saveTaxScenario').addEventListener('click',saveTaxScenario);
 $('fiscalCountry').addEventListener('change',async()=>{currentState.fiscal.country=$('fiscalCountry').value;await saveState();});
 $('saveStrategyEpoch').addEventListener('click',saveStrategyEpoch);

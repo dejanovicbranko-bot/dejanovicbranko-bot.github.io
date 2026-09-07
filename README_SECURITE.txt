@@ -314,3 +314,27 @@ GRIDLEDGER v2.1.1 — CAPITAL FINANCIER
 - La migration retire automatiquement l'ancien immobilier importé en v2.1.
 - Bots, BTC, réserve, mouvements, snapshots et documents restent inchangés.
 - Le fichier Excel d'origine reste la source séparée pour l'immobilier.
+
+
+GRIDLEDGER v2.2 — DASHBOARD DÉTAILLÉ + PONT CHATGPT LOCAL
+=========================================================
+- Le tableau de bord détaille désormais les actifs financiers, les flux, les bots, les frais, les dernières mises à jour et l'activité récente.
+- Le libellé « Protégé » devient « Long terme + réserve » pour être plus explicite.
+- La progression d'objectif reste basée uniquement sur le capital financier.
+- Un contrôle signale les valeurs observées depuis plus de 30 jours.
+- Le service worker force mieux les nouvelles versions de l'application sans demander d'effacer le stockage local.
+
+PONT CHATGPT LOCAL
+- GridLedger peut préparer un contexte structuré à partager vers ChatGPT avec la feuille de partage Android.
+- Ce contexte n'inclut jamais le mot de passe, les clés, les sauvegardes chiffrées, les fichiers ni les captures brutes.
+- Une capture choisie dans GridLedger peut être partagée volontairement vers ChatGPT via Android.
+- Aucun partage n'est automatique : l'utilisateur choisit explicitement l'application destinataire.
+- Une fois un contexte ou une capture partagé à ChatGPT, les données concernées quittent le stockage local GridLedger et sont traitées par le service choisi par l'utilisateur.
+- ChatGPT n'a pas d'accès direct à IndexedDB dans cette version et ne peut pas modifier le coffre en arrière-plan.
+- Aucune clé API OpenAI n'est stockée dans la PWA publique.
+- La future connexion directe devra passer par un backend authentifié et une file de propositions. Une écriture comptable restera soumise à confirmation humaine.
+
+LIMITES v2.2
+- Le pont local simplifie le passage GridLedger → ChatGPT mais n'est pas encore une synchronisation bidirectionnelle.
+- Le moteur comptable du prototype utilise encore Number JavaScript ; la production devra migrer vers une arithmétique décimale stricte.
+- IndexedDB peut être supprimé par le système ou le navigateur : exporter régulièrement une sauvegarde chiffrée reste indispensable.

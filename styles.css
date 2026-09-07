@@ -305,3 +305,40 @@ body.captureAdvanced .simpleStatus{display:none}
 .planningBox>div{display:flex;justify-content:space-between;gap:8px;padding:4px 0}
 .planningBox span{color:var(--muted)}.planningBox strong{text-align:right}
 .locationSourceNote{margin:6px 0 4px;padding:7px;border-radius:8px;background:#f7f9fb;color:var(--muted);font-size:9px;line-height:1.4}
+
+/* ==========================================================
+   GridLedger v2.2 — tableau de bord détaillé + pont ChatGPT local
+   ========================================================== */
+.dashboardAssetList{display:flex;flex-direction:column;gap:0}
+.dashboardAssetRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #edf1f4}
+.dashboardAssetRow:last-child{border-bottom:0}
+.dashboardAssetMain{min-width:0;display:flex;flex-direction:column;gap:3px}
+.dashboardAssetMain b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dashboardAssetMain span{font-size:10px;color:var(--muted)}
+.dashboardAssetValue{display:flex;align-items:flex-end;flex-direction:column;gap:4px;text-align:right;flex:0 0 auto}
+.dashboardAssetValue b{font-size:14px}
+.freshTag{display:inline-block;padding:2px 6px;border-radius:999px;font-size:9px;font-weight:900;background:#edf2f6;color:var(--muted)}
+.freshGood{background:#e8f5ed;color:#176435}.freshWarn{background:#fff5df;color:#805400}.freshBad{background:#fff0ef;color:#a22c24}
+.flowGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.flowGrid>div{border:1px solid var(--line);border-radius:11px;padding:10px;min-width:0}
+.flowGrid span{display:block;color:var(--muted);font-size:9px;line-height:1.3;margin-bottom:4px}
+.flowGrid b{font-size:13px;word-break:break-word}
+.dashboardAccountingNote{margin-top:9px;line-height:1.45}
+.dashboardBotDetailed{padding:13px}
+.dashboardBotTop{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
+.dashboardBotTop h3{margin:0 0 3px}
+.botDetailMiniGrid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.botDetailMiniGrid>div{background:#f7f9fb;border-radius:9px;padding:8px;min-width:0}
+.botDetailMiniGrid span{display:block;color:var(--muted);font-size:8px;line-height:1.25;margin-bottom:3px}
+.botDetailMiniGrid b{font-size:11px;word-break:break-word}
+.nativeMetricStrip{display:grid;grid-template-columns:1fr auto;gap:4px 10px;margin-top:9px;padding:9px;border:1px dashed #c8d2dc;border-radius:10px;font-size:10px}
+.nativeMetricStrip span{color:var(--muted)}.nativeMetricStrip b{text-align:right}
+.recentActivity{display:flex;flex-direction:column}
+.recentRow{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid #edf1f4}
+.recentRow:last-child{border-bottom:0}.recentRow>div{min-width:0}.recentRow b{display:block;font-size:11px}.recentRow span{display:block;color:var(--muted);font-size:9px;margin-top:2px;line-height:1.35}.recentRow time{font-size:9px;color:var(--muted);white-space:nowrap}
+.assistantPanel{border-color:#bfd5e8;background:#fbfdff}
+.assistantStatus{font-size:11px;font-weight:800;color:var(--navy);padding:8px 10px;background:#edf5fb;border-radius:10px}
+.assistantPreview{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;line-height:1.45;background:#f7f9fb;min-height:250px;resize:vertical}
+.assistantActions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+.assistantShareButton{width:100%;margin:0 0 8px;background:var(--blue)}
+@media(max-width:390px){.flowGrid,.botDetailMiniGrid,.assistantActions{grid-template-columns:1fr}}

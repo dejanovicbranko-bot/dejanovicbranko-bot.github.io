@@ -1,7 +1,7 @@
 {
   "name": "GridLedger Personnel",
   "short_name": "GridLedger",
-  "description": "GridLedger local et chiffré avec import du tableau de base.",
+  "description": "GridLedger financier local et chiffré, tableau de bord détaillé et pont de partage contrôlé vers ChatGPT.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f3f6f9",
@@ -19,6 +19,5 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ],
-  "scope": "./"
+  ]
 }
