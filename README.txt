@@ -1,10 +1,26 @@
-GRIDLEDGER v3.1 — HISTORIQUE
+GRIDLEDGER v3.2 — BOTS ACTIFS / BOTS FERMÉS / PRÉVISIONS FISCALES
 
-À envoyer dans le dépôt GitHub à la racine :
-1. history-fix.js (nouveau fichier)
-2. sw.js (remplacer l'ancien)
+À mettre à la racine du dépôt GitHub :
+- ui-v32.js : nouveau fichier
+- sw.js : remplacer l'ancien
 
-Ne pas supprimer app.js, cloud-sync.js ou les données locales.
-Après l'upload, ouvrir GridLedger dans le navigateur, actualiser, fermer/réouvrir l'application installée, puis utiliser « Récupérer les mises à jour ChatGPT ».
+Ne supprime pas :
+- app.js
+- cloud-sync.js
+- history-fix.js
+- tes données locales
 
-Le correctif ne contient aucune donnée financière personnelle.
+Après l'upload :
+1. Ouvre GridLedger dans le navigateur.
+2. Actualise une fois.
+3. Ferme et rouvre l'application installée.
+4. Dans Assistant GridLedger, touche « Récupérer les mises à jour ChatGPT ».
+
+Ce correctif :
+- montre d'abord uniquement les bots actifs ;
+- range les bots fermés dans un onglet séparé ;
+- ajoute des prévisions fiscales de 10 % et 30 % sur les gains nets réalisés connus ;
+- précise que ces montants sont des provisions/scénarios et pas un calcul fiscal officiel ;
+- marque les apports/performance comme partiels tant que l'historique complet des apports n'est pas réconcilié.
+
+Aucune donnée financière personnelle n'est incluse dans les fichiers publics.
