@@ -22,6 +22,7 @@ function closedRows(s){
   }).filter(Boolean);
 }
 function render(){
+  if(document.getElementById('gl4Cockpit'))return;
   const s=getState(),host=document.getElementById('dashboard');
   if(!s||!host)return;
   let box=document.getElementById('glHistoryV31');

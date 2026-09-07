@@ -18,19 +18,59 @@ const botSnaps=(s,id)=>(s.snapshots||[]).filter(x=>x.botId===id);
 const activeBots=s=>(s.bots||[]).filter(b=>(b.status||'ACTIVE')!=='CLOSED' && Number(b.value||0)>0);
 const closedBots=s=>(s.bots||[]).filter(b=>b.status==='CLOSED');
 
+// Read-only projection: never migrate or write financial history.
+function eventDate(value){
+  const d=String(value||'').slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return '';
+  const t=new Date(d+'T12:00:00Z');
+  return Number.isFinite(t.getTime())&&t.toISOString().slice(0,10)===d?d:'';
+}
+const displayDate=d=>d?d.split('-').reverse().join('/'):'Date exacte inconnue';
+function realizedEvents(s){
+  const rows=new Map();
+  for(const o of s.observations||[]){
+    if(!/^realized-(gain|loss)-eur-/.test(String(o.id||'')))continue;
+    // Old imports may link an observation only through its location.
+    const matches=o.botId?(s.bots||[]).filter(b=>b.id===o.botId):
+      (s.bots||[]).filter(b=>o.locationId&&b.locationId===o.locationId);
+    if(matches.length!==1||matches[0].status!=='CLOSED')continue;
+    const old=rows.get(o.id);
+    if(!old||String(o.updatedAt||o.observedAt||o.createdAt||'')>=String(old.o.updatedAt||old.o.observedAt||old.o.createdAt||''))rows.set(o.id,{o,b:matches[0]});
+  }
+  return [...rows.values()].map(({o,b})=>{
+    const valid=(typeof o.value==='number'||typeof o.value==='string'&&o.value.trim()!=='')&&Number.isFinite(Number(o.value));
+    const eur=valid?(String(o.id).startsWith('realized-loss-')?-1:1)*Math.abs(Number(o.value)):null;
+    const date=eventDate(o.date);
+    return {id:o.id,b,eur,date,confidence:o.confidence||'TO_VERIFY',known:eur!==null&&o.confidence==='CERTAIN'};
+  }).sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999')||String(a.id).localeCompare(String(b.id)));
+}
 function realizedObs(s,bid){
-  const r=(s.observations||[]).filter(o=>o.botId===bid && /^realized-(gain|loss)-eur-/.test(String(o.id||'')));
-  const o=latest(r); if(!o)return null;
-  const loss=String(o.id||'').startsWith('realized-loss-');
-  return {eur:(loss?-1:1)*Number(o.value||0),date:o.date||'',confidence:o.confidence||'ESTIMATED'};
+  const rows=realizedEvents(s).filter(r=>r.b.id===bid&&r.known);
+  return rows.length?{eur:rows.reduce((a,r)=>a+r.eur,0),date:rows.at(-1).date,confidence:'CERTAIN'}:null;
 }
 function realizedSummary(s){
   let gain=0,loss=0;
-  for(const b of closedBots(s)){
-    const r=realizedObs(s,b.id); if(!r)continue;
-    if(r.eur>=0)gain+=r.eur; else loss+=r.eur;
+  for(const r of realizedEvents(s).filter(r=>r.known)){
+    if(r.eur>=0)gain+=r.eur;else loss+=r.eur;
   }
   return {gain,loss,net:gain+loss};
+}
+function timeline(s){
+  const events=realizedEvents(s);
+  const rows=events.map(r=>({date:r.date,html:`<article class="gl4ClosedCard"><div><b>${esc(displayDate(r.date))} · ${esc(r.b.name||'Bot clôturé')}</b><div class="gl4Small">${String(r.id).startsWith('realized-loss-')?'Perte réalisée':'Gain réalisé'} · ${r.known?'Montant confirmé dans les données':'Exclu des provisions : montant à vérifier'}</div></div><div class="gl4ClosedResult"><strong>${r.eur===null?'montant inconnu':euro(r.eur)}</strong>${confidenceBadge(r.confidence)}</div></article>`}));
+  for(const date of ['2026-05-08','2026-06-24']){
+    if(!events.some(r=>r.date===date&&r.eur<0))rows.push({date,html:`<article class="gl4ClosedCard"><div><b>${displayDate(date)} · Perte réalisée signalée</b><div class="gl4Small">Montant documenté à retrouver dans l’état local/cloud ; exclu des provisions tant qu’absent.</div></div><strong>montant inconnu</strong></article>`});
+  }
+  const crashKnown=events.some(r=>r.date==='2025-10-10'&&r.eur<0&&r.known);
+  rows.push({date:'2025-10-10',html:`<article class="gl4ClosedCard"><div><b>10/10/2025 · ancien épisode de perte / krach crypto</b><div class="gl4Small">Repère historique uniquement ; jamais une perte fiscale certaine à lui seul. ${crashKnown?'Voir les pertes réalisées confirmées ci-dessus ou ci-dessous.':'La perte réalisée exacte reste à prouver.'}</div></div><strong>${crashKnown?'Voir événements documentés':'montant inconnu'}</strong></article>`});
+  return `<section class="gl4Panel gl4Timeline"><div class="gl4Head"><div><h2>Chronologie des bots clôturés</h2><p>Dates de réalisation enregistrées, sans déduire la date d’une capture ou d’un import. Aucun résultat inventé pour 2024 ou 2025.</p></div></div><div class="gl4ClosedGrid">${rows.sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999')).map(r=>r.html).join('')}</div></section>`;
+}
+function taxPanel(s){
+  const r=realizedSummary(s),t=tax(s);
+  return `<section class="gl4Panel gl4Fiscal"><div class="gl4Head"><div><h2>Fiscalité · provisions sur le réalisé connu</h2><p>Cumul documenté, toutes années disponibles ; aucun report fiscal de pertes présumé.</p></div></div><div class="gl4Tax">
+    <div><span>Gains clôturés</span><b>${euro(r.gain)}</b></div><div><span>Pertes clôturées</span><b>${euro(r.loss)}</b></div><div><span>Résultat net réalisé connu</span><b>${euro(r.net)}</b></div>
+    <div><span>Base des scénarios : max(0, résultat net réalisé connu)</span><b>${euro(t.base)}</b></div><div><span>Provision scénario 10 % :</span><b>${euro(t.t10)}</b></div><div><span>Provision scénario 30 % :</span><b>${euro(t.t30)}</b></div></div>
+    <p class="gl4Legal">10 % et 30 % sont des scénarios de provision, non un calcul fiscal belge officiel. Seuls les résultats EUR explicitement réalisés des bots clôturés et confirmés dans l’état local/cloud sont retenus. Grid Profit des bots actifs, P&amp;L latent et capital investi sont exclus. Les montants inconnus, estimés ou à vérifier sont exclus. « Certain » décrit la confiance des données, pas leur qualification fiscale.</p></section>`;
 }
 function locationTotals(s){
   const activeIds=new Set(activeBots(s).map(b=>b.locationId));
@@ -78,8 +118,8 @@ function quality(s){
 function monthKey(d){return String(d||'').slice(0,7)}
 function realizedMonthly(s){
   const map=new Map();
-  for(const b of closedBots(s)){
-    const r=realizedObs(s,b.id); if(!r?.date)continue;
+  for(const r of realizedEvents(s)){
+    if(!r.known||!r.date)continue;
     const k=monthKey(r.date);map.set(k,(map.get(k)||0)+r.eur);
   }
   return [...map].sort((a,b)=>a[0].localeCompare(b[0]));
@@ -104,13 +144,13 @@ function renderActiveCard(s,b){
 function renderClosedCard(s,b){
   const r=realizedObs(s,b.id), sn=latest(botSnaps(s,b.id)), invest=sn?.investmentNative;
   return `<article class="gl4ClosedCard">
-    <div><div class="gl4Platform">${esc(b.platform||'')}</div><b>${esc(b.name||'Bot fermé')}</b><div class="gl4Small">${esc(b.pair||'')} ${r?.date?'· '+esc(r.date):''}</div></div>
-    <div class="gl4ClosedResult">${r?`<strong class="${r.eur>=0?'posTxt':'negTxt'}">${r.eur>=0?'+':''}${euro(r.eur)}</strong>${confidenceBadge(r.confidence)}`:'<strong>À compléter</strong>'}</div>
+    <div><div class="gl4Platform">${esc(b.platform||'')}</div><b>${esc(b.name||'Bot fermé')}</b><div class="gl4Small">${esc(b.pair||'')} ${eventDate(b.closedAt)?'· Clôture : '+displayDate(eventDate(b.closedAt)):'· Date de clôture inconnue'}</div></div>
+    <div class="gl4ClosedResult"><div class="gl4Small">Cumul réalisé confirmé</div>${r?`<strong class="${r.eur>=0?'posTxt':'negTxt'}">${r.eur>=0?'+':''}${euro(r.eur)}</strong>${confidenceBadge(r.confidence)}`:'<strong>À compléter</strong>'}</div>
     ${invest!=null?`<div class="gl4Small gl4Wide">Capital historique documenté : ${num(invest)} ${esc(sn.nativeUnit||'')}</div>`:''}
   </article>`;
 }
 function dashboard(s){
-  const totals=locationTotals(s),r=realizedSummary(s),t=tax(s),c=contributionInfo(s),q=quality(s);
+  const totals=locationTotals(s),r=realizedSummary(s),c=contributionInfo(s),q=quality(s);
   return `<section id="gl4Cockpit">
     <div class="gl4Hero">
       <div><div class="gl4Eyebrow">GRIDLEDGER v4 · VUE FIABLE</div><div class="gl4Label">Capital financier actuel</div><div class="gl4Capital">${euro(totals.total)}</div><div class="gl4HeroNote">Uniquement les positions actuellement détenues. Les anciens bots sont exclus.</div></div>
@@ -124,12 +164,10 @@ function dashboard(s){
       <div><span>Pertes clôturées</span><b class="negTxt">${euro(r.loss)}</b><small>historique connu</small></div>
       <div><span>Net clôturé</span><b class="${r.net>=0?'posTxt':'negTxt'}">${euro(r.net)}</b><small>base de suivi</small></div>
     </div>
+    ${taxPanel(s)}
+    ${timeline(s)}
     <div class="gl4Grid">
       <div class="gl4Panel gl4Span2"><div class="gl4Head"><div><h2>Bots actifs</h2><p>Ce qui travaille actuellement</p></div><button data-go="bots">Détail</button></div><div class="gl4ActiveGrid">${activeBots(s).map(b=>renderActiveCard(s,b)).join('')||'<div class="gl4Empty">Aucun bot actif.</div>'}</div></div>
-      <div class="gl4Panel"><div class="gl4Head"><div><h2>Prévision fiscale</h2><p>Sur gains nets réalisés connus</p></div></div>
-        <div class="gl4Tax"><div><span>Base actuelle</span><b>${euro(t.base)}</b></div><div><span>Provision 10 %</span><b>${euro(t.t10)}</b></div><div><span>Provision 30 %</span><b>${euro(t.t30)}</b></div></div>
-        <div class="gl4Legal">Prévisions uniquement, pas un calcul fiscal officiel. Aucun P&L latent n’est taxé ici.</div>
-      </div>
       <div class="gl4Panel gl4Span2"><div class="gl4Head"><div><h2>Résultats réalisés par mois</h2><p>Clôtures documentées uniquement</p></div></div>${renderBars(realizedMonthly(s))}</div>
       <div class="gl4Panel"><div class="gl4Head"><div><h2>Contrôle des données</h2><p>Ce qu’il reste à fiabiliser</p></div></div><div class="gl4Quality">${q.slice(0,4).map(x=>`<div class="${x[2]}"><b>${esc(x[0])}</b><span>${esc(x[1])}</span></div>`).join('')}</div></div>
     </div>
@@ -142,6 +180,7 @@ function botsView(s){
   return `<section id="gl4Bots">
     <div class="gl4BotsIntro"><div><div class="gl4Eyebrow">SUIVI SPOT GRID</div><h2>Mes bots</h2><p>Actifs d’abord. Les bots fermés restent archivés avec leur résultat.</p></div></div>
     <div class="gl4Tabs"><button data-gl4mode="ACTIVE" class="${mode==='ACTIVE'?'sel':''}">Actifs · ${active.length}</button><button data-gl4mode="CLOSED" class="${mode==='CLOSED'?'sel':''}">Fermés · ${closed.length}</button></div>
+    ${mode==='CLOSED'?timeline(s):''}
     <div class="${mode==='ACTIVE'?'gl4ActiveGrid':'gl4ClosedGrid'}">${(mode==='ACTIVE'?active.map(b=>renderActiveCard(s,b)):closed.map(b=>renderClosedCard(s,b))).join('')||'<div class="gl4Empty">Aucun bot.</div>'}</div>
   </section>`;
 }
@@ -167,6 +206,12 @@ function render(){
     if(!x){x=document.createElement('div');x.id='gl4Cockpit';d.prepend(x)}
     x.outerHTML=dashboard(s);hideLegacyDashboard();bindNav(document.getElementById('gl4Cockpit'));
   }
+  const fiscal=document.getElementById('fiscal');
+  if(fiscal){
+    let panel=document.getElementById('gl4FiscalSummary');
+    if(!panel){panel=document.createElement('div');panel.id='gl4FiscalSummary';fiscal.prepend(panel)}
+    panel.innerHTML=taxPanel(s);
+  }
   const b=document.getElementById('bots');
   if(b){
     let x=document.getElementById('gl4Bots');
@@ -182,6 +227,10 @@ function render(){
 function addStyle(){
  if(document.getElementById('gl4Style'))return;
  const st=document.createElement('style');st.id='gl4Style';st.textContent=`
+ .gl4Panel.gl4Fiscal{margin:16px 24px;border:2px solid #225f86;background:#f5faff}
+ .gl4Fiscal h2{color:#163954}.gl4Fiscal .gl4Legal{color:#405367;font-size:.82rem}
+ .gl4Timeline{margin:16px 24px}.gl4Tax>div{gap:12px;flex-wrap:wrap}
+ #gl4Bots .gl4Timeline{margin:12px 0}.gl4ClosedResult{overflow-wrap:anywhere}
  .gl4LegacyHidden{display:none!important}
  #gl4Cockpit,#gl4Bots{padding:0 0 110px;color:#23384a}
  #gl4Cockpit{background:#eef3f6}
@@ -220,7 +269,7 @@ function addStyle(){
 let sig='';
 function tick(){
  addStyle();const s=state();if(!s)return;
- const next=JSON.stringify({u:s.updated,nb:(s.bots||[]).length,ns:(s.snapshots||[]).length,no:(s.observations||[]).length,nm:(s.movements||[]).length,mode:s.settings?.gl4BotMode,vals:(s.bots||[]).map(b=>[b.id,b.value,b.status])});
+ const next=JSON.stringify(s);
  if(next!==sig||!document.getElementById('gl4Cockpit')){sig=next;render()}
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{setInterval(tick,1000);tick()},{once:true});else{setInterval(tick,1000);tick()}

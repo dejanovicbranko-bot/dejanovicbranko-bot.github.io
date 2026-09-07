@@ -5,7 +5,7 @@
 // No personal figures are embedded: everything is read from the encrypted local state
 // synchronized from GridLedger Cloud.
 
-const € = v => Number(v||0).toLocaleString('fr-BE',{style:'currency',currency:'EUR'});
+const euro = v => Number(v||0).toLocaleString('fr-BE',{style:'currency',currency:'EUR'});
 const num = v => Number(v||0).toLocaleString('fr-BE',{maximumFractionDigits:2});
 const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -26,10 +26,18 @@ function realizedObservation(s,botId){
   return {...o,signedValue:loss?-Number(o.value||0):Number(o.value||0)};
 }
 function taxBase(s){
-  return (s.observations||[]).reduce((a,o)=>{
-    const id=String(o.id||'');
-    if(id.startsWith('realized-gain-eur-')) return a+Number(o.value||0);
-    if(id.startsWith('realized-loss-eur-')) return a-Number(o.value||0);
+  const rows=new Map();
+  for(const o of s.observations||[]){
+    const old=rows.get(o.id);
+    if(!old||String(o.updatedAt||o.observedAt||o.createdAt||'')>=String(old.updatedAt||old.observedAt||old.createdAt||''))rows.set(o.id,o);
+  }
+  return [...rows.values()].reduce((a,o)=>{
+    const bots=(s.bots||[]).filter(b=>o.botId?b.id===o.botId:o.locationId&&b.locationId===o.locationId);
+    if(bots.length!==1||bots[0].status!=='CLOSED'||o.confidence!=='CERTAIN')return a;
+    if(!(typeof o.value==='number'||typeof o.value==='string'&&o.value.trim()!=='')||!Number.isFinite(Number(o.value)))return a;
+    const id=String(o.id||''),value=Math.abs(Number(o.value));
+    if(id.startsWith('realized-gain-eur-'))return a+value;
+    if(id.startsWith('realized-loss-eur-'))return a-value;
     return a;
   },0);
 }
@@ -42,7 +50,7 @@ function botCard(s,b,closed=false){
   const cp=sn?.currentProfitNative;
   const bits=[];
   if(closed && rr){
-    bits.push(`<div class="gl32Result ${rr.signedValue>=0?'pos':'neg'}">Résultat réalisé : ${rr.signedValue>=0?'+':''}${€(rr.signedValue)}</div>`);
+    bits.push(`<div class="gl32Result ${rr.signedValue>=0?'pos':'neg'}">Résultat réalisé : ${rr.signedValue>=0?'+':''}${euro(rr.signedValue)}</div>`);
   }else if(closed){
     bits.push(`<div class="gl32Muted">Résultat EUR à vérifier / compléter</div>`);
   }
@@ -56,12 +64,13 @@ function botCard(s,b,closed=false){
       ${bits.join('')}
     </div>
     <div class="gl32Right">
-      ${closed?'<span class="gl32Closed">Fermé</span>':`<b>${€(b.value||0)}</b><span class="gl32Active">Actif</span>`}
+      ${closed?'<span class="gl32Closed">Fermé</span>':`<b>${euro(b.value||0)}</b><span class="gl32Active">Actif</span>`}
     </div>
   </div>`;
 }
 
 function renderBots(){
+  if(document.getElementById('gl4Bots'))return;
   const s=st(), host=document.getElementById('bots');
   if(!s||!host)return;
 
@@ -104,6 +113,7 @@ function renderBots(){
 }
 
 function renderTax(){
+  if(document.getElementById('gl4Cockpit'))return;
   const s=st(), host=document.getElementById('dashboard');
   if(!s||!host)return;
   let box=document.getElementById('glTaxForecastV32');
@@ -120,9 +130,9 @@ function renderTax(){
     <h2>Prévisions fiscales sur gains réalisés</h2>
     <div class="gl32Muted">Scénarios de provision uniquement. Ce n'est pas un calcul fiscal officiel. Les P&L latents et les bots encore actifs ne sont pas inclus.</div>
     <div class="gl32TaxGrid">
-      <div><span>Gains nets réalisés connus</span><b>${€(net)}</b></div>
-      <div><span>Prévision 10 %</span><b>${€(taxable*0.10)}</b></div>
-      <div><span>Prévision 30 %</span><b>${€(taxable*0.30)}</b></div>
+      <div><span>Gains nets réalisés connus</span><b>${euro(net)}</b></div>
+      <div><span>Prévision 10 %</span><b>${euro(taxable*0.10)}</b></div>
+      <div><span>Prévision 30 %</span><b>${euro(taxable*0.30)}</b></div>
     </div>
   `;
 }

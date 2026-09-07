@@ -1,4 +1,4 @@
-const CACHE='gridledger-mobile-v4-cockpit-1';
+const CACHE='gridledger-mobile-v4-cockpit-2';
 const STATIC_ASSETS=[
  './styles.css','./app.js','./manifest.webmanifest','./icon-192.png','./icon-512.png',
  './cloud-sync.js','./history-fix.js','./ui-v32.js','./gridledger-v4.js'
